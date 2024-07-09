@@ -363,6 +363,11 @@ function AuxFilter.match(fullAux, auxStr)
     local secondKeymatched = fullAux[2]:find(auxStr:sub(1, 1)) ~= nil
     -- 如果辅助码只有一个键，且第一个键匹配两辅码中任意一个，则返回 true
     if #auxStr == 1 then
+        -- 为了与断句的逻辑统一,还是不加这个分支了
+        -- if AuxFilter.matchmode==1 then
+        --     return firstKeyMatched
+        -- end
+        
         return firstKeyMatched or secondKeymatched
     end
     -- 宽松模式下如果辅助码有两个或以上,有效组合的排列都有效  严格模式下 顺序一致有效
