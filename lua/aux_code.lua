@@ -1,8 +1,14 @@
 local AuxFilter = {}
 -- local log = require ('log')
 -- log.outfile = "a.txt"
-
-
+-- 获取表的长度 判断表是不是空表
+function table.size(t)
+    local s = 0;
+    for k, v in pairs(t) do
+        if v ~= nil then s = s + 1 end
+        end
+   return s
+end
 -- 定义函数来统计子字符串出现的次数
 local function countSubstringOccurrences(str, substr)
     local count = 0
@@ -135,6 +141,8 @@ function AuxFilter.init(env)
         AuxFilter.longcandimodify_notifier(ctx)
     elseif env.notifiermark==3 then
         AuxFilter.longcandimodify_ybnotifier(ctx)
+    elseif env.notifiermark==4 then
+        AuxFilter.singlechar_notifier(ctx)
     end
     end)
 end
@@ -210,6 +218,11 @@ function AuxFilter.longcandimodify_ybnotifier(ctx)
     ctx.input = AuxFilter.ybmodifiedcode
     end
 
+function AuxFilter.singlechar_notifier(ctx)
+     -- log.info("modifyinput",AuxFilter.ybmodifiedcode)
+    ctx.input = AuxFilter.trigger_key
+    end
+       
 
 
 -- 生成所有长度为1和2的组合 的函数  输入 adf 会输出 {a,d,f,ad,af,df}  
@@ -261,31 +274,23 @@ function AuxFilter.readAuxTxt(txtpath)
         local fuset = two_char_combinations(fu)
         if zi and fu and yb then
             -- auxCodes 的逻辑不变
-            auxCodes[zi] = auxCodes[fu] or {}
+            auxCodes[zi] = auxCodes[fu] or {}  -- 歪打正着似乎嘿嘿  因为有多音字
             table.insert(auxCodes[zi], fu)
             --加入mixedcodes的逻辑  这里只考虑到音码是两位,且完整辅码是两位
             mixedCodes[yb] = mixedCodes[yb] or {}
             for k,v in ipairs(fuset) do
-                mixedCodes[yb][v] = true
+                mixedCodes[yb][v] = mixedCodes[yb][v] or {}
+                table.insert(mixedCodes[yb][v],zi)
             end
 
         end
     end
     AuxFilter.aux_code = auxCodes
     AuxFilter.comb_code = mixedCodes
+    -- log.info(#mixedCodes)
     file:close()
     return auxCodes
 end
-
--- 輔助函數，用於獲取表格的所有鍵
-local function table_keys(t)
-    local keys = {}
-    for key, _ in pairs(t) do
-        table.insert(keys, key)
-    end
-    return keys
-end
-
 
 -- 定义函数来获取表的所有值
 local function table_values(tbl)
@@ -340,7 +345,7 @@ function AuxFilter.fullAux(env, word)
     return fullAuxCodes
 end
 
--- 定义函数来将字符串两两分割
+-- 定义函数来将字符串两两分割  获取 音节
 local function splitToPairs(str)
     local result = {}
     for i = 1, #str, 2 do
@@ -394,21 +399,40 @@ function AuxFilter.candisub(cand,len)
 
 end
 
+-- 輔助函數，用於獲取表格的所有鍵
+local function table_keys(t)
+    local keys = {}
+    for key, _ in pairs(t) do
+        table.insert(keys, key)
+    end
+    return keys
+end
 -- 辅码与音码匹配与否
+local function boolaux(tab)
+    local mark = false
+    if tab then
+        if table.size(tab)~=0 then
+        mark = true
+        end
+    
+end
+return mark
+end
 local function combmath(aux,tab)
     local mark = true --;;这种空辅码也返回true也就是断在头部
     if AuxFilter.matchmode ==0 then
         --宽匹配下无关辅码顺序
         if #aux~=0 then
-            if not (tab[aux] or tab[aux:reverse()]) then --
+            if not (boolaux(tab[aux]) or boolaux(tab[aux:reverse()])) then --
                 mark = false
                 -- log.info(aux,tab[aux],tab[aux:reverse()],table.concat(table_keys(tab),"-"))
             end
         end
     elseif AuxFilter.matchmode==1 then
         if #aux~=0 then
-            if not tab[aux] then
+            if not boolaux(tab[aux]) then
                 mark = false
+                -- log.info(aux,tab[aux],table.concat(table_keys(tab),"-"))
             end
         end
     end
@@ -512,7 +536,9 @@ function AuxFilter.main1(input,env)
         for index, value in ipairs(inputspls) do
             -- log.info(index,value)
             local auxtab = AuxFilter.comb_code[value]
+            -- log.info(auxtab)
             if combmath(auxStr,auxtab) then
+                -- log.info("111")
                 table.insert(matchybtab,tostring(index).."." .. utf8sub(firstcandtext,index,index))
             end
         end
@@ -626,9 +652,70 @@ function AuxFilter.longcandimodify(input,env)
     finalcandi.comment = comment
     yield(finalcandi)
     end
+end
 
 
-    
+
+
+
+--- 输入单字分支  对于诗文类或许有用
+function AuxFilter.singlechar(input,env)
+    env.notifiermark = 4
+    local  inputcode =env.engine.context.input
+    local  ybxkinputcode = inputcode:sub(2,-1)
+    local  ybcode = ""
+    local xkcode = ""
+    if #inputcode==3 then
+        ybcode = inputcode:sub(2,-1)
+        local ci = AuxFilter.comb_code[ybcode]
+        local finalkey = {}
+        for k,v in pairs(ci) do 
+            if #k==2 then 
+                for i,v in pairs(v) do
+                    finalkey[v] = k
+                end
+            end
+        end
+        for k,v in pairs(finalkey) do
+            if AuxFilter.show_aux_notice then
+                yield(Candidate("single",1,#inputcode,k,v))
+            else
+                yield(Candidate("single",1,#inputcode,k,""))
+            end
+            
+        end
+        return
+
+    else
+        ybcode = ybxkinputcode:sub(1,2)
+        xkcode = ybxkinputcode:sub(3,-1)
+        -- log.info(xkcode)
+        local ci = AuxFilter.comb_code[ybcode]
+        if not ci then
+            return
+        end
+        if AuxFilter.matchmode==0 then
+            ci = AuxFilter.comb_code[ybcode][xkcode] or AuxFilter.comb_code[ybcode][xkcode:reverse()]
+        else 
+            ci = AuxFilter.comb_code[ybcode][xkcode]-- log.info(#ci)
+        end
+        if ci then
+        if table.size(ci) ~= 0 then
+            for k,v in  pairs(ci) do
+                local comment = AuxFilter.aux_code[v] or {}
+                local comment = table.concat(comment,"-")
+                if AuxFilter.show_aux_notice then 
+                    yield(Candidate("single",1,#inputcode,v,comment))
+                else
+                    yield(Candidate("single",1,#inputcode,v,""))
+                end
+            end
+        end
+        else
+        env.engine.context.input = inputcode:sub(1,3)
+        return
+        end
+    end
 end
 ------------------
 -- filter 主函數 --
@@ -637,14 +724,17 @@ function AuxFilter.func(input, env)
     -- log.info("func")
     local context = env.engine.context
     local inputCode = context.input
-
+    env.notifiermark = -1
     -- 分割部分正式開始
     local pattern_main1 = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*$'  --辅筛分支的正则
     local pattern_long = "^%a+" ..AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .."+%a*$" --长句修改分支的正则
+    local pattern_singlechar = "^" .. AuxFilter.trigger_key_pattern .. "%a%a%a?%a?$"  -- 单字输入分支
     if string.match(inputCode,pattern_main1)then
         AuxFilter.main1(input,env)
     elseif string.match(inputCode,pattern_long) then
         AuxFilter.longcandimodify(input,env)     
+    elseif string.match(inputCode,pattern_singlechar) then
+        AuxFilter.singlechar(input,env)
     --都不匹配直接返回的分支
     else
         AuxFilter.defaultmain(input)
