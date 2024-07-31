@@ -1,7 +1,8 @@
 local AuxFilter = {}
 local log = require ('log')
+local http = require("simplehttp")
 log.outfile = "a.txt"
-
+http.TIMEOUT = 0.5
 -- 定义记忆词典路径   用辅码选词用户词典没有记忆,只能在这里统计,然后后续处理.不知道怎么直接操作用户词典
 local logFilePath = rime_api.get_user_data_dir() .. "/dic.log"
 
@@ -9,26 +10,26 @@ local logFilePath = rime_api.get_user_data_dir() .. "/dic.log"
 local dicfile = io.open(logFilePath, "a")
 local function logdic(message)
     if dicfile then
-        -- 获取当前时间
-        local time = os.date("%Y-%m-%d %H:%M:%S")
-        -- 格式化日志信息
-        local logMessage = string.format("[%s] %s\n", time, message)
-        -- 写入日志文件
-        dicfile:write(logMessage)
-        -- 刷新缓冲区
-        dicfile:flush()
-    else
-        log.info("无法打开日志文件")
-    end
+    -- 获取当前时间
+    local time = os.date("%Y-%m-%d %H:%M:%S")
+    -- 格式化日志信息
+    local logMessage = string.format("[%s] %s\n", time, message)
+    -- 写入日志文件
+    dicfile:write(logMessage)
+    -- 刷新缓冲区
+    dicfile:flush()
+else
+    log.info("无法打开日志文件")
 end
+end  
 
 -- 获取表的长度 判断表是不是空表
 function table.size(t)
     local s = 0;
     for k, v in pairs(t) do
         if v ~= nil then s = s + 1 end
-    end
-    return s
+        end
+   return s
 end
 -- 定义函数来统计子字符串出现的次数
 local function countSubstringOccurrences(str, substr)
@@ -132,13 +133,13 @@ function AuxFilter.init(env)
     if AuxFilter.aux_code == nil then
         AuxFilter.readAuxTxt(defaultuserprefer["path"])
     end
-    --设置匹配模式 0宽松匹配和1严格匹配  默认严格 l为宽松
+     --设置匹配模式 0宽松匹配和1严格匹配  默认严格 l为宽松
     if defaultuserprefer["matchmode"] == "s" then
         AuxFilter.matchmode=1
     else
         AuxFilter.matchmode = 0
     end
-    -- if AuxFilter.comb_code == nil then
+        -- if AuxFilter.comb_code == nil then
     --     AuxFilter.comb_code = AuxFilter.read_ybxkcomb_File("ybxkcomb")
     -- end
     -- 設定預設觸發鍵為分號，並從配置中讀取自訂的觸發鍵
@@ -155,56 +156,57 @@ function AuxFilter.init(env)
 
     env.notifier = engine.context.select_notifier:connect(function(ctx)
 
-        if env.notifiermark ==1 then
-            AuxFilter.main1_notifier(ctx)
-        elseif env.notifiermark==2 then
-            AuxFilter.longcandimodify_notifier(ctx)
-        elseif env.notifiermark==3 then
-            AuxFilter.longcandimodify_ybnotifier(ctx)
-        elseif env.notifiermark==4 then
-            AuxFilter.singlechar_notifier(ctx)
-        end
+    if env.notifiermark ==1 then
+        AuxFilter.main1_notifier(ctx)
+    elseif env.notifiermark==2 then
+        AuxFilter.longcandimodify_notifier(ctx)
+    elseif env.notifiermark==3 then
+        AuxFilter.longcandimodify_ybnotifier(ctx)
+    elseif env.notifiermark==4 then
+        AuxFilter.singlechar_notifier(ctx)
+    end
     end)
 end
 
 --- notifier main1模式  (辅筛)
-----------------------------
--- 持續選詞上屏，保持輔助碼分隔符存在 --
-----------------------------
+    ----------------------------
+    -- 持續選詞上屏，保持輔助碼分隔符存在 --
+    ----------------------------
 function AuxFilter.main1_notifier(ctx)
-    local preedit = ctx:get_preedit()
-    local removeAuxInput = ctx.input:match("([^,]+)" .. AuxFilter.trigger_key_pattern)
-    local reeditTextFront = preedit.text:match("([^,]+)" .. AuxFilter.trigger_key_pattern)
-    -- log.info(removeAuxInput,reeditTextFront)
-    -- ctx.text 隨著選字的進行，oaoaoa； 有如下的輸出：
-    -- ---- 有輔助碼 ----
-    -- >>> 啊 oaoa；au
-    -- >>> 啊吖 oa；au
-    -- >>> 啊吖啊；au
-    -- ---- 無輔助碼 ----
-    -- >>> 啊 oaoa；
-    -- >>> 啊吖 oa；
-    -- >>> 啊吖啊；
-    -- 這邊把已經上屏的字段 (preedit:text) 進行分割；
-    -- 如果已經全部選完了，分割後的結果就是 nil，否則都是 吖卡 a 這種字符串
-    -- 驗證方式：
-    -- log.info('select_notifier', ctx.input, removeAuxInput, preedit.text, reeditTextFront)
+    -- local preedit = ctx:get_preedit()
+    --     local removeAuxInput = ctx.input:match("([^,]+)" .. AuxFilter.trigger_key_pattern)
+    --     local reeditTextFront = preedit.text:match("([^,]+)" .. AuxFilter.trigger_key_pattern)
+        -- log.info(removeAuxInput,reeditTextFront)
+        -- ctx.text 隨著選字的進行，oaoaoa； 有如下的輸出：
+        -- ---- 有輔助碼 ----
+        -- >>> 啊 oaoa；au
+        -- >>> 啊吖 oa；au
+        -- >>> 啊吖啊；au
+        -- ---- 無輔助碼 ----
+        -- >>> 啊 oaoa；
+        -- >>> 啊吖 oa；
+        -- >>> 啊吖啊；
+        -- 這邊把已經上屏的字段 (preedit:text) 進行分割；
+        -- 如果已經全部選完了，分割後的結果就是 nil，否則都是 吖卡 a 這種字符串
+        -- 驗證方式：
+        -- log.info('select_notifier', ctx.input, removeAuxInput, preedit.text, reeditTextFront)
 
-    -- 當最終不含有任何字母時 (候選)，就跳出分割模式，並把輔助碼分隔符刪掉
-    ctx.input = removeAuxInput
-    if reeditTextFront and reeditTextFront:match("[a-z]") then
-        -- 給詞尾自動添加分隔符，上面的 re.match 會把分隔符刪掉
-        ctx.input = ctx.input .. AuxFilter.trigger_key
-    else
-        -- 剩下的直接上屏
-        ctx:commit()
-        --- 只记录词
-        if utf8len(reeditTextFront)>1 then
-            logdic(reeditTextFront .. "," .. removeAuxInput)
+        -- 當最終不含有任何字母時 (候選)，就跳出分割模式，並把輔助碼分隔符刪掉
+        ctx.input = AuxFilter.removeAuxInput
+        if AuxFilter.removetransdInput ~= "" then
+            -- 給詞尾自動添加分隔符，上面的 re.match 會把分隔符刪掉
+            ctx.input = ctx.input .. AuxFilter.trigger_key
+        else
+            -- 剩下的直接上屏
+            -- log.info(AuxFilter.transdcode,AuxFilter.removeAuxInput)
+            ctx:commit()
+            --- 只记录词
+            if utf8len(AuxFilter.transdcode)>1 then
+                logdic(AuxFilter.transdcode .. "," .. AuxFilter.removeAuxInput) 
+            end
+
         end
-
     end
-end
 
 
 
@@ -213,57 +215,57 @@ end
 
 
 --- notifier longcandimodify模式  (断句模式)
-----------------------------
--- 保持輔助碼分隔符和原辅码存在 --
-----------------------------
+    ----------------------------
+    -- 保持輔助碼分隔符和原辅码存在 --
+    ----------------------------
 function AuxFilter.longcandimodify_notifier(ctx)
     local preedit = ctx:get_preedit()
-    local removeAuxInput = ctx.input:match("(%a*)" .. AuxFilter.trigger_key_pattern.."-")
-    local auxcode = ctx.input:match(AuxFilter.trigger_key_pattern.. "(%a*)" .. AuxFilter.trigger_key_pattern)
-    -- log.info("auxcode",auxcode)
-    -- log.info("removeauxinput",removeAuxInput)
-    local reeditTextFront = preedit.text:match("([^"..AuxFilter.trigger_key_pattern .."]-)" .. AuxFilter.trigger_key_pattern)
-    ctx.input = removeAuxInput
-    if reeditTextFront and reeditTextFront:match("[a-z]") then
-        -- 給詞尾自動添加分隔符和原辅码进入到辅筛模式，上面的 re.match 會把分隔符刪掉
-        ctx.input = ctx.input .. AuxFilter.trigger_key .. auxcode
-    else
-        -- 剩下的直接上屏
-        ctx:commit()
-
+        local removeAuxInput = ctx.input:match("(%a*)" .. AuxFilter.trigger_key_pattern.."-")
+        local auxcode = ctx.input:match(AuxFilter.trigger_key_pattern.. "(%a*)" .. AuxFilter.trigger_key_pattern)
+        -- log.info("auxcode",auxcode)
+        -- log.info("removeauxinput",removeAuxInput)
+        local reeditTextFront = preedit.text:match("([^"..AuxFilter.trigger_key_pattern .."]-)" .. AuxFilter.trigger_key_pattern)
+        ctx.input = removeAuxInput
+        if reeditTextFront and reeditTextFront:match("[a-z]") then
+            -- 給詞尾自動添加分隔符和原辅码进入到辅筛模式，上面的 re.match 會把分隔符刪掉
+            ctx.input = ctx.input .. AuxFilter.trigger_key .. auxcode
+        else
+            -- 剩下的直接上屏 
+            ctx:commit()
+            
+        end
     end
-end
 
---- notifier longcandimodify2模式(修音模式)
+--- notifier longcandimodify2模式(修音模式) 
 function AuxFilter.longcandimodify_ybnotifier(ctx)
     -- log.info("modifyinput",AuxFilter.ybmodifiedcode)
     ctx.input = AuxFilter.ybmodifiedcode
-end
+    end
 ---  notifier singlechar_notifier(连续单字模式)
 function AuxFilter.singlechar_notifier(ctx)
-    -- log.info("modifyinput",AuxFilter.ybmodifiedcode)
+     -- log.info("modifyinput",AuxFilter.ybmodifiedcode)
     ctx.input = AuxFilter.trigger_key
-end
+    end
+       
 
 
-
--- 生成所有长度为1和2的组合 的函数  输入 adf 会输出 {a,d,f,ad,af,df}
+-- 生成所有长度为1和2的组合 的函数  输入 adf 会输出 {a,d,f,ad,af,df}  
 local function two_char_combinations(str)
     local result = {}
     local n = #str
-
+    
     -- 生成所有长度为1的组合
     for i = 1, n do
         table.insert(result, str:sub(i, i))
     end
-
+    
     -- 生成所有长度为2的组合
     for i = 1, n do
         for j = i + 1, n do
             table.insert(result, str:sub(i, i) .. str:sub(j, j))
         end
     end
-
+    
     return result
 end
 ----------------
@@ -273,7 +275,7 @@ end
 function AuxFilter.readAuxTxt(txtpath)
     -- 读得文件格式变了 字 音 辅的表   ||  嗄	aa	kw
     -- log.info("** AuxCode filter", 'read Aux code txt:', txtpath)
-    -- log.info("读文件") --这里打印日志
+    -- log.info("读文件") --这里打印日志 
     local defaultFile = 'ZRM_Aux-code_4.3.txt'
     local userPath = rime_api.get_user_data_dir() .. "/lua/"
     local fileAbsolutePath = userPath .. txtpath .. ".txt"
@@ -341,7 +343,7 @@ end
 --             a a
 --             u h
 --       (竖着拍成左右两个字符串)
---   第一个辅码键的不重复列表为：fullAuxCodes[1]= urpao
+--   第一个辅码键的不重复列表为：fullAuxCodes[1]= urpao 
 --   第二个辅码键的不重复列表为：fullAuxCodes[2]= urhafi
 -- -----------------------------------------------
 function AuxFilter.fullAux(env, word)
@@ -384,7 +386,7 @@ function AuxFilter.match(fullAux, auxStr)
     if #fullAux == 0 then
         return false
     end
-
+    
 
     local firstKeyMatched = fullAux[1]:find(auxStr:sub(1, 1)) ~= nil
     local secondKeymatched = fullAux[2]:find(auxStr:sub(1, 1)) ~= nil
@@ -394,7 +396,7 @@ function AuxFilter.match(fullAux, auxStr)
         -- if AuxFilter.matchmode==1 then
         --     return firstKeyMatched
         -- end
-
+        
         return firstKeyMatched or secondKeymatched
     end
     -- 宽松模式下如果辅助码有两个或以上,有效组合的排列都有效  严格模式下 顺序一致有效
@@ -415,6 +417,7 @@ function AuxFilter.candisub(cand,len)
     if fiend>cand._end then
         fiend = cand._end
     end
+    -- local finalcandi = Candidate(cand.type,cand._start,fiend,candset,cand.comment)
     local finalcandi = Candidate(cand.type,cand._start,fiend,candset,cand.comment)
     -- log.info(Candi)
     return finalcandi
@@ -434,11 +437,11 @@ local function boolaux(tab)
     local mark = false
     if tab then
         if table.size(tab)~=0 then
-            mark = true
+        mark = true
         end
-
-    end
-    return mark
+    
+end
+return mark
 end
 local function combmath(aux,tab)
     local mark = true --;;这种空辅码也返回true也就是断在头部
@@ -461,30 +464,28 @@ local function combmath(aux,tab)
 
 
     -- log.info(aux,mark)
-    return mark
+return mark
 end
 
 --- 分支一 原来的功能
 function AuxFilter.main1(input,env)
     env.notifiermark = 1  --辅筛情况下的 选词后的逻辑标记 变为 1
-    local context = env.engine.context
-    local inputCode = context.input
-
     -- 分割部分正式開始
     local auxStr = ''
     local funccode = ""
-    local localSplit = inputCode:match(AuxFilter.trigger_key_pattern .. "([^"..AuxFilter.trigger_key_pattern.."]+)")
+    local localSplit = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "([^"..AuxFilter.trigger_key_pattern.."]+)")
     if localSplit then
         auxStr = string.sub(localSplit, 1, 2)
-        funccode = string.gsub(localSplit,auxStr,"",1)
-        --[[
-        除去两位辅码剩余的判定为功能码
-        为什么这里也要引入偏移量?
-        因为有时筛出的词长度长,第一页内有包含目的词的词,通过功能码可以上修改候选长度.
-    ]]
+        funccode = string.gsub(localSplit,auxStr,"",1) 
+    --[[
+    除去两位辅码剩余的判定为功能码
+    为什么这里也要引入偏移量?
+    因为有时筛出的词长度长,第一页内有包含目的词的词,通过功能码可以上修改候选长度.
+]]
 
     end
-    local leftcompen = countSubstringOccurrences(funccode,"a") + 2* countSubstringOccurrences(funccode,"s") --左偏移量
+
+    local leftcompen = countSubstringOccurrences(funccode,"a") + 2* countSubstringOccurrences(funccode,"s") --左偏移量 
     local rightcompen = countSubstringOccurrences(funccode,"d") + 2 * countSubstringOccurrences(funccode,"f") -- 右偏移量
     -- 更新逻辑：没有匹配上就不出现再候选框里，提升性能
     -- local insertLater = {}
@@ -504,9 +505,13 @@ function AuxFilter.main1(input,env)
         --第一个候选词 额外逻辑
         if index==1 then
             firstcandi = cand
+            if AuxFilter.firstcandipre~=nil then
+                firstcandi = Candidate("simple", firstcandi._start, firstcandi._end, AuxFilter.firstcandipre.text, "(百度云拼音)")
+                AuxFilter.firstcandipre = nil
+            end
+            cand = firstcandi
+    
         end
-
-
         local auxCodes = AuxFilter.aux_code[cand.text] -- 僅單字非 nil
         local fullAuxCodes = AuxFilter.fullAux(env, cand.text)
 
@@ -525,7 +530,7 @@ function AuxFilter.main1(input,env)
                 local shadowComment = cand.comment
                 local originalCand = cand:get_genuine()
                 cand = ShadowCandidate(originalCand, originalCand.type, shadowText,
-                        originalCand.comment .. shadowComment .. '(' .. codeComment .. ')')
+                    originalCand.comment .. shadowComment .. '(' .. codeComment .. ')')
             else
                 cand.comment = '(' .. codeComment .. ')'
             end
@@ -536,8 +541,7 @@ function AuxFilter.main1(input,env)
             -- 沒有輔助碼、不需篩選，直接返回待選項
             counter=counter+1
             yield(AuxFilter.candisub(cand,ficompensate))
-        elseif #auxStr > 0 and fullAuxCodes and (cand.type == 'user_phrase' or cand.type == 'phrase') and
-                AuxFilter.match(fullAuxCodes, auxStr) then
+        elseif #auxStr > 0 and fullAuxCodes and  AuxFilter.match(fullAuxCodes, auxStr) then
             -- 匹配到辅助码的待选项，直接插入到候选框中( 获得靠前的位置 )
             counter = counter+1
             yield(AuxFilter.candisub(cand,ficompensate))
@@ -549,8 +553,7 @@ function AuxFilter.main1(input,env)
     end
     --如果辅筛没筛出来,提示你进行辅断
     if counter==0 then
-        local removeAuxInput = context:get_preedit().text:match("(%a+)" .. AuxFilter.trigger_key_pattern.."-") --
-        local inputspls  = splitToPairs(removeAuxInput) --未翻译的音码集合
+        local inputspls  = splitToPairs(AuxFilter.removetransdInput) --未翻译的音码集合
         -- log.info("inputls")
         local matchybtab = {} --辅码可以组合的未翻译的音码的集合
         local firstcandtext = firstcandi.text
@@ -569,7 +572,7 @@ function AuxFilter.main1(input,env)
         if #matchybtab~=0 then
             commentfirst = table.concat(matchybtab,"--")
         end
-        -- log.info(firstcandi.text)
+            -- log.info(firstcandi.text)
         firstcandi.comment = commentfirst
         -- log.info(firstcandi.text)
         -- log.info("comment" ,commentfirst)
@@ -585,36 +588,55 @@ function AuxFilter.defaultmain(input)
     for cand in input:iter() do
         yield(cand)
     end
-
+    
 end
 
 
 
 --- 句子修改分支
 function AuxFilter.longcandimodify(input,env)
-    local branchmark = 1 --在句子修改分支中的分支  1-断句分支  2-修音分支
+    local branchmark = 1 --在句子修改分支中的分支  1-断句分支  2-修音分支 3-云词分支
     env.notifiermark = 2  --断句情况下的 选词后的逻辑标记 变为 2
     ---获取第一个候选也就是最长的那个,,怎么简单的获取,
-    local firstcandi = ""
+    local firstcandi =""
     for cand in input:iter() do
         firstcandi = cand
         break
     end
-    local context = env.engine.context
-    local inputCode0 = context.input:match("(%a+)" .. AuxFilter.trigger_key_pattern.."-")  --纯输入引导键前的部分
-    local inputCode = context:get_preedit().text
-    -- log.info("inputcode",inputCode)
-    -- log.info(inputCode)
-    local removeAuxInput = inputCode:match("(%a+)" .. AuxFilter.trigger_key_pattern.."-")  --翻译过后引导键前的未翻译部分
-    local transdcode = string.gsub(inputCode0,removeAuxInput,"")  --已翻译部分
-    -- log.info("转换了的音码",transdcode)
-    -- log.info("removeauxinput",removeAuxInput)
-    local auxcode = inputCode:match(AuxFilter.trigger_key_pattern .. "(%a*)" .. AuxFilter.trigger_key_pattern) --辅码部分
+    if AuxFilter.firstcandipre ~=nil then
+        firstcandi = Candidate("simple", firstcandi._start, firstcandi._end, AuxFilter.firstcandipre.text, "(百度云拼音)")
+    end
+    local auxcode = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "(%a*)" .. AuxFilter.trigger_key_pattern) --辅码部分
     -- log.info("auxcode",auxcode)
-    local funccode = inputCode:match(AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .. "+(%a*)") --功能码部分
+    local funccode = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .. "+(%a*)") --功能码部分
     -- log.info("fucncode",funccode)
     local ybmodif = funccode:match("s(%a%a)") --功能码部分捕获的修音的音码
-    if ybmodif then
+    -- local yyciif = countSubstringOccurrences(funccode,"y")
+    -- local pinyin = firstcandi.preedit:gsub("%s+", "")
+    -- if  yyciif==1 then
+    --     -- local url = make_url(pinyin, 0, 5)
+    --     local url = "http://localhost:6234/pre/".. pinyin
+    --     http.request(url)
+    --     return
+    --     -- log.info(reply)
+
+    --     end   
+    -- if yyciif==2 then
+    --     local url = "http://localhost:6234/result/".. pinyin
+    --     local reply = http.request(url)
+    --     if reply~="" then
+    --         for word in string.gmatch(reply, "[^@]+") do 
+    --             yield(Candidate("simple", firstcandi._start, firstcandi._end, word, "(百度云拼音)"))
+    --         end
+    --     end
+    --     return
+
+        
+
+        
+    -- end
+        
+    if ybmodif then 
         --进入修音分支处理
         branchmark=2
         funccode = string.gsub(funccode,"s" .. ybmodif,"") --减掉修音部分的功能码,为后续统计偏移做准备
@@ -623,9 +645,9 @@ function AuxFilter.longcandimodify(input,env)
     -- log.info("funccode",funccode)
     local leftcompen = countSubstringOccurrences(funccode,"a") --左偏移量
     local rightcompen = countSubstringOccurrences(funccode,"d") + 2 * countSubstringOccurrences(funccode,"f") -- 右偏移量
-    local inputspls  = splitToPairs(removeAuxInput) --把未翻译的音码拆成单字音码列表  {音码1,音码2}
+    local inputspls  = splitToPairs(AuxFilter.removetransdInput) --把未翻译的音码拆成单字音码列表  {音码1,音码2}
     local compensate = utf8len(firstcandi.text) --初始化偏移量  默认在断点尾部
-    local passnum = countSubstringOccurrences(inputCode,AuxFilter.trigger_key) -2  --计算跳过匹配数  功能码中 ; 的作用
+    local passnum = countSubstringOccurrences(AuxFilter.inputCode,AuxFilter.trigger_key) -2  --计算跳过匹配数  功能码中 ; 的作用
     -- log.info(inputspls[1])
     --确定最终断点位置
     local matchedmark = false  --整句辅码是否有有效配对
@@ -635,7 +657,7 @@ function AuxFilter.longcandimodify(input,env)
             compensate = index
             matchedmark= true
             if passnum==0 then
-                break
+            break
             end
             passnum=passnum-1
 
@@ -646,9 +668,9 @@ function AuxFilter.longcandimodify(input,env)
     -- end
     compensate = compensate + rightcompen - leftcompen
     if matchedmark then
-        compensate = compensate -1  --减1是要断在作用词之前
+       compensate = compensate -1  --减1是要断在作用词之前  
     end
-
+  
     --如果前面没字就上一个
     if compensate<=0 then
         compensate =1
@@ -661,18 +683,21 @@ function AuxFilter.longcandimodify(input,env)
         inputspls[compensate] = ybmodif
         local inputcode2 = table.concat(inputspls,"")  --修改后的未翻译音码连接为字符串
         -- log.info(inputcode2)
-        AuxFilter.ybmodifiedcode = transdcode .. inputcode2 .. AuxFilter.trigger_key  --修改后的音码 + 引导键
-        yield(Candidate(firstcandi.type,firstcandi._start,firstcandi._start,"",wrongyb .."->" .. ybmodif))  --"确定"  候选项
+        AuxFilter.ybmodifiedcode = AuxFilter.transdcodei .. inputcode2 .. AuxFilter.trigger_key  --修改后的音码 + 引导键
 
-        --在断点处断句逻辑
+        AuxFilter.removetransdInput = inputcode2:sub(1,-2)
+        AuxFilter.ybtrans()
+        yield(Candidate(firstcandi.type,firstcandi._start,firstcandi._start,"",wrongyb .."->" .. ybmodif))  --"确定"  候选项
+    
+    --在断点处断句逻辑
     elseif branchmark==1 then
         local comment = ""
-        local finalcandi = AuxFilter.candisub(firstcandi,compensate)
-        if not matchedmark then
-            comment = "辅码无匹配"
-        end
-        finalcandi.comment = comment
-        yield(finalcandi)
+    local finalcandi = AuxFilter.candisub(firstcandi,compensate)
+    if not matchedmark then
+        comment = "辅码无匹配"
+    end
+    finalcandi.comment = comment
+    yield(finalcandi)
     end
 end
 
@@ -688,11 +713,11 @@ function AuxFilter.singlechar(input,env)
     local  ybcode = ""
     local xkcode = ""
     if #inputcode==3 then  -- 引导键+两位音码   返回音码 下的所有单字并注释形码
-        ybcode = inputcode:sub(2,-1)
+        ybcode = inputcode:sub(2,-1) 
         local ci = AuxFilter.comb_code[ybcode]
         local finalkey = {}
-        for k,v in pairs(ci) do
-            if #k==2 then
+        for k,v in pairs(ci) do 
+            if #k==2 then 
                 for i,v in pairs(v) do
                     finalkey[v] = k
                 end
@@ -704,7 +729,7 @@ function AuxFilter.singlechar(input,env)
             else
                 yield(Candidate("single",1,#inputcode,k,""))
             end
-
+            
         end
         return
 
@@ -718,58 +743,110 @@ function AuxFilter.singlechar(input,env)
         end
         if AuxFilter.matchmode==0 then
             ci = AuxFilter.comb_code[ybcode][xkcode] or AuxFilter.comb_code[ybcode][xkcode:reverse()]
-        else
+        else 
             ci = AuxFilter.comb_code[ybcode][xkcode]
         end
         if ci then
-            if table.size(ci) ~= 0 then
-                for k,v in  pairs(ci) do
-                    local comment = AuxFilter.aux_code[v] or {}
-                    local comment = table.concat(comment,"-")
-                    if AuxFilter.show_aux_notice then
-                        yield(Candidate("single",1,#inputcode,v,comment))
-                    else
-                        yield(Candidate("single",1,#inputcode,v,""))
-                    end
+        if table.size(ci) ~= 0 then
+            for k,v in  pairs(ci) do
+                local comment = AuxFilter.aux_code[v] or {}
+                local comment = table.concat(comment,"-")
+                if AuxFilter.show_aux_notice then 
+                    yield(Candidate("single",1,#inputcode,v,comment))
+                else
+                    yield(Candidate("single",1,#inputcode,v,""))
                 end
             end
+        end
         else
-            env.engine.context:clear()
-            env.engine.context:push_input(inputcode:sub(1,3))
-            -- env.engine.context.input = inputcode:sub(1,3)  --这是输入形码无效后回退到没有形码 ,保留引导键和音码
-            return
+        env.engine.context:clear()
+        env.engine.context:push_input(inputcode:sub(1,3))
+        -- env.engine.context.input = inputcode:sub(1,3)  --这是输入形码无效后回退到没有形码 ,保留引导键和音码 
+        return
         end
     end
 end
 ------------------
 -- filter 主函數 --
 ------------------
+-- local function osget(inp)
+--     local order = rime_api.get_user_data_dir() .. "/lua/" .. 'qkqq '.. inp
+--     log.info(order)
+--     local handle = io.popen(order)
+--     local result = handle:read("*a")
+--     handle:close()
+--     return result
+    
+-- end
+function AuxFilter.ybtrans()
+    local l = #AuxFilter.removetransdInput
+    if l<=8 then
+        return
+    end
+    local vf,yu = math.modf(l/2)
+    if yu~=0 then
+        local url = "http://localhost:6235/pre/".. AuxFilter.removetransdInput
+        http.request(url)
+        -- osget(AuxFilter.removetransdInput)
+        return
+    else
+        local url = "http://localhost:6235/result/".. AuxFilter.removetransdInput
+        local reply = http.request(url)
+        if reply~="" then
+            for word in string.gmatch(reply, "[^@]+") do 
+                AuxFilter.firstcandipre = Candidate("simple", 0, l, word, "(百度云拼音)")
+                break
+            end
+        end
+        return
+    end
+end
+
+
 function AuxFilter.func(input, env)
-    local context = env.engine.context
-    local inputCode = context.input
     env.notifiermark = -1
-    -- 分割部分正式開始
+    local context = env.engine.context
+    --- 预处理输入码
+    AuxFilter.inputCode = context.input --输入码
+    -- log.info("输入码",AuxFilter.inputCode)
+    AuxFilter.precode = context:get_preedit().text --预处理码 
+    AuxFilter.removeAuxInput = AuxFilter.inputCode:match("^(%a+)" .. AuxFilter.trigger_key_pattern.."-")  or ""--纯输入引导键前的部分
+    -- log.info("引导键前的输入",AuxFilter.removeAuxInput)
+    AuxFilter.removeAuxprecode = AuxFilter.precode:match("^([^" .. AuxFilter.trigger_key_pattern .. "]*)" .. AuxFilter.trigger_key_pattern.."-") or "" --去除辅码后的pre
+    -- log.info("引导键前的预处理",AuxFilter.removeAuxprecode)
+    AuxFilter.removetransdInput= AuxFilter.removeAuxprecode:match("^[^a-z]*(%a*)") or ""  --翻译过后引导键前的未翻译部分  
+    -- log.info("引导键前的未翻译",AuxFilter.removetransdInput) 
+    AuxFilter.transdcode = string.gsub(AuxFilter.removeAuxprecode,AuxFilter.removetransdInput,"")  --已翻译部分
+    -- log.info("已翻译部分",AuxFilter.transdcode)
+    AuxFilter.transdcodei = string.gsub(AuxFilter.removeAuxInput,AuxFilter.removetransdInput,"")  --已翻译字母部分
+    -- log.info("已翻译的字母",AuxFilter.transdcodei)
+    -- 云词处理
+    AuxFilter.ybtrans()
+    -- 分流
     local pattern_main1 = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*$'  --辅筛分支的正则
     local pattern_long = "^%a+" ..AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .."+%a*$" --长句修改分支的正则
     local pattern_singlechar = "^" .. AuxFilter.trigger_key_pattern .. "%a%a%a?%a?$"  -- 单字输入分支
-    if string.match(inputCode,pattern_main1)then
+    if string.match(AuxFilter.inputCode,pattern_main1)then
+        -- log.info("进入分支1",AuxFilter.inputCode)
         AuxFilter.main1(input,env)
-    elseif string.match(inputCode,pattern_long) then
-        AuxFilter.longcandimodify(input,env)
-    elseif string.match(inputCode,pattern_singlechar) then
+    elseif string.match(AuxFilter.inputCode,pattern_long) then
+        AuxFilter.longcandimodify(input,env) 
+        -- log.info("进入分支2",AuxFilter.inputCode)    
+    elseif string.match(AuxFilter.inputCode,pattern_singlechar) then
         AuxFilter.singlechar(input,env)
-        --都不匹配直接返回的分支
+        -- log.info("进入分支3",AuxFilter.inputCode)
+    --都不匹配直接返回的分支
     else
         AuxFilter.defaultmain(input)
-    end
-
+        end
+    
 end
 
 function AuxFilter.fini(env)
     -- log.info("fini")
-    env.notifier:disconnect()
+        env.notifier:disconnect()
 
-
+    
 
 end
 
