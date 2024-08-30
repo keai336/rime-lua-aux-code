@@ -14,15 +14,20 @@ RIME 输入法辅助码与音形分离插件 -> <a href="https://www.bilibili.co
 ## 特点
 
 * 通过独立的文件存储辅码，无需生成音形混合词典   
-* 提供包括**自然码辅码表**和**小鹤形码表****墨奇形码表**在内的三种主流方案 （你甚至能找到**五笔**辅助码）   
+* 提供包括 **自然码辅码表** 和 **小鹤形码表** **墨奇形码表** 在内的三种主流方案 （你甚至能找到**五笔**辅助码）   
 * 三种模式满足不同输入需求
-  - `连续单字模式`![单字模式.gif](static%2F%E5%8D%95%E5%AD%97%E6%A8%A1%E5%BC%8F.gif)在开头键入引导键激活单字模式,选择候选词并上屏后,可继续输入，插件会自动移除已上屏文字的输入码;适合输入诗句,名字,等场景.
+  - `连续单字模式`![singlechar.gif](static/singlechar.gif)在开头键入引导键激活单字模式,选择候选词并上屏后,可继续输入，插件会自动移除已上屏文字的输入码;适合输入诗句,名字,等场景.
   - `筛词模式` 在输入末尾键入引导键来激活辅码模式，选择候选词并上屏（通过空格或数字）后，可继续输入，插件会自动移除已上屏文字的辅码  
       ![](https://cdn.jsdelivr.net/gh/HowcanoeWang/rime-lua-aux-code/static/aux_split.png)
     - 支持词语级筛选 （非首字筛选）  
         ![](https://cdn.jsdelivr.net/gh/HowcanoeWang/rime-lua-aux-code/static/aux_word.png)  
         如「白日依山尽」仍然可以匹配到「i」 （尽的辅码）
-  - `断句模式` ![断句模式.gif](static%2F%E6%96%AD%E5%8F%A5%E6%A8%A1%E5%BC%8F.gif)在筛词模式下没有筛出时,提醒你进行断句模式,再次键入引导键激活断句模式,选择断开的前半部分后,辅码依旧存在,协助辅筛后半部分. 例子中 `rr` 是 `似`的辅码.
+  - `断句模式` ![spliter_and_filter.gif](static/spliter_and_filter.gif)在筛词模式下没有筛出时,提醒你进行断句模式,再次键入引导键激活断句模式,选择断开的前半部分后,辅码依旧存在,协助辅筛后半部分. 例子中 `ud` 是 `枣`的辅码.
+    - 断句模式触发后（也就是第二个引导键按下后），后面的输入为功能符号 
+    - 影响所断位置偏移量 `a：⬅️1` `d：➡️1` `f：➡️2` `引导键：➡️下一个匹配的位置` 
+    - 我输入`ud`后，输入引导键，进入断句模式，因为这个句子中第一个匹配项为`wo+ud = 斡`，所以再次敲引导键，断句位置为第二个匹配字前（`zc+ud=枣`）。
+  - `辅修音模式`![repronouncer.gif](static/repronouncer.gif)在断句模式的找到所断位置的基础上 输入 `s + 新的音`，会把该位置前的音修改，`yx` 是 `恩` 的辅码，断的位置为`恩`前，也就是修改`ming -> min`的音。
+  - `云候选`![yun.gif](static/yun.gif) 在输入完音后第一次，如果候选不满意，敲下引导键，第一个候选会替换为云候选，对句子的正确性提升还是很大的，如果这个云候选不满意，可以在这个候选的基础上进行改造了。
 * 在候选单中直接提示单字的辅助码 （可配置关闭）  
   ![](https://cdn.jsdelivr.net/gh/HowcanoeWang/rime-lua-aux-code/static/aux_notice.png)
 * 为优化性能，**未**匹配辅助码的候选**不会**出现在列表中
@@ -48,7 +53,7 @@ RIME 输入法辅助码与音形分离插件 -> <a href="https://www.bilibili.co
 
 #### 桌面平台 (Windows, macOS 和 Linux)
 
-1. 将本项目中的 `lua/aux_code.lua`、`lua/ZRM_Aux-code_4.3.txt` （自然码辅码表） 或 `lua/flypy_full.txt` （小鹤形码表） 复制到 `Rime 配置文件夹/lua/` 文件夹中。
+1. 将本项目中的  `yunserver`下的 `server` 文件夹 `、lua/aux_code.lua`、`lua/ZRM_Aux-code_4.3.txt` （自然码辅码表） 或 `lua/flypy_full.txt` （小鹤形码表） 复制到 `Rime 配置文件夹/lua/` 文件夹中。
 
 2. 本插件需附加至特定输入方案。首先，复制你所需使用的输入方案文件名，将文件名中的 `schema` 改为 `custom`。然后，创建并打开一个名为 `*.custom.yaml` 的文件，在其中添加所需内容：
 
@@ -80,9 +85,10 @@ RIME 输入法辅助码与音形分离插件 -> <a href="https://www.bilibili.co
     ```
     > :warning: 本插件使用的自然码方案为修改版，可能和你之前一直使用的有细微区别，建议开启辅助码提示一段时间后，确定输入没问题了再考虑关闭该项
 
-3. 重新配置 Rime 输入法，如果一切顺利，应该就可以使用了。
+3. 因为云候选有依赖，按照这个 https://github.com/hchunhui/librime-cloud 这个教程配置。
+4. 重新配置 Rime 输入法，如果一切顺利，应该就可以使用了。
 
-#### 安卓平台的小企鹅输入法 5 安装与配置方法
+#### 安卓平台的小企鹅输入法 5 安装与配置方法 （暂未适配）
 
 为确保应用的正常运行，应选择安装 [F-Droid 发行的小企鹅输入法版本](https://f-droid.org/packages/org.fcitx.fcitx5.android/)，而不是从 Google Play 上安装。
 
