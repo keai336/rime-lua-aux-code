@@ -618,12 +618,18 @@ function AuxFilter.main1(input,env)
     local firstcandi = ""      -- 第一个候选也就是最长的那个
     local index=0  --为了获取第一个候选的判断变量
     for cand in input:iter() do
+        firstcandi = cand
         -- log.info(cand.text,ficompensate)
         index = index+1
         --第一个候选词 额外逻辑
         if index==1 then
             if #(AuxFilter.firstcandipre)~=0 then
+                local i = 0
                 for _, value in ipairs(AuxFilter.firstcandipre) do
+                    i = i+1
+                    if i==1 then
+                        firstcandi = value
+                    end
                     value._start = cand._start
                     value._end  = cand._start+2*utf8len(value.text)
                     main_main(env,value)
