@@ -118,8 +118,8 @@ function AuxFilter.init(env)
     -- log.info("** AuxCode filter", env.name_space)
     local engine = env.engine
     AuxFilter.memory = Memory(env.engine, env.engine.schema)
-    local defaultuserprefer = {path="ZRM_Aux-code",showor="true",trigger=";",matchmode="s"}
-    local keys = {"path", "showor","trigger", "matchmode"}
+    local defaultuserprefer = {path="ZRM_Aux-code",showor="true",trigger=";",matchmode="s",yun="on"}
+    local keys = {"path", "showor","trigger", "matchmode","yun"}
     local userprefer = string.gmatch(env.name_space,"([^@]+)")
     local counter0 = 0
     for item in userprefer do
@@ -151,6 +151,12 @@ function AuxFilter.init(env)
         AuxFilter.show_aux_notice = false
     else
         AuxFilter.show_aux_notice = true
+    end
+    AuxFilter.yun_or = defaultuserprefer["yun"]
+    if AuxFilter.yun_or == "on" then
+        AuxFilter.yun_or = true
+    else
+        AuxFilter.yun_or = false
     end
     -- 不同模式不同处理逻辑
 
@@ -352,9 +358,10 @@ function AuxFilter.readAuxTxt(txtpath)
     AuxFilter.comb_code = mixedCodes
     -- log.info(#mixedCodes)
     file:close()
-    log.info(serverpath)
-    os.execute('taskkill /IM server.exe /F')
-    os.execute("cd " .. serverpath .. " && cmd /c start server.exe")
+    if AuxFilter.yun_or then
+        os.execute('taskkill /IM server.exe /F')
+        os.execute("cd " .. serverpath .. " && cmd /c start server.exe")
+    end
     return auxCodes
 end
 
@@ -471,6 +478,7 @@ function AuxFilter.match(fullAux, auxStr)
 end
 -- 返回指定长度的候选
 function AuxFilter.yield_candisub(cand,len)
+    
     local candset = utf8sub(cand.text,1,len)
     local _end = 2*len
     local fiend = cand._start+_end
@@ -479,10 +487,12 @@ function AuxFilter.yield_candisub(cand,len)
     end
     -- local finalcandi = Candidate(cand.type,cand._start,fiend,candset,cand.comment)
     local finalcandi = Candidate(cand.type,cand._start,fiend,candset,cand.comment)
+    -- finalcandi.preedit = cand.preedit:sub(cand._start,fiend)
     if AuxFilter.yieldset[finalcandi.text]~=nil then
         return    
     end
     AuxFilter.yieldset[finalcandi.text] = true
+    AuxFilter.skipc = AuxFilter.skipc or 0
     if AuxFilter.skipc<=0 then
         yield(finalcandi)
         
@@ -558,8 +568,8 @@ local function main_main(env,cand)
             cand.comment = '(' .. codeComment .. ')'
         end
     end
-
     -- 過濾輔助碼
+    AuxFilter.counter = AuxFilter.counter or 0
     if #(AuxFilter.auxStr) == 0 then
         -- 沒有輔助碼、不需篩選，直接返回待選項
         if AuxFilter.counter==0 then
@@ -592,7 +602,7 @@ end
 function AuxFilter.main1(input,env)
     env.notifiermark = 1  --辅筛情况下的 选词后的逻辑标记 变为 1
     -- 分割部分正式開始
-    AuxFilter.auxStr = ''
+    AuxFilter.auxStr = ""
     AuxFilter.funccode = ""
     local localSplit = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "([^"..AuxFilter.trigger_key_pattern.."]+)")
     if localSplit then
@@ -605,8 +615,6 @@ function AuxFilter.main1(input,env)
 ]]
 
     end
-
-
     AuxFilter.leftcompen = countSubstringOccurrences(AuxFilter.funccode,"a") + 2* countSubstringOccurrences(AuxFilter.funccode,"s") --左偏移量 
     AuxFilter.rightcompen = countSubstringOccurrences(AuxFilter.funccode,"d") + 2 * countSubstringOccurrences(AuxFilter.funccode,"f") -- 右偏移
     AuxFilter.skipc = countSubstringOccurrences(AuxFilter.funccode,"w")
@@ -676,9 +684,19 @@ end
 
 
 --- 无触发分支
-function AuxFilter.defaultmain(input)
+function AuxFilter.defaultmain(input,env)
     -- log.info(1)
+    -- local l = #AuxFilter.removetransdInput
+    -- local vf,yu = math.modf(l/2)
+    -- if yu~=0 then
+    --     AuxFilter.auxStr = AuxFilter.removetransdInput:sub(-1) or ""
+    --     for cand in input:iter() do
+    --         main_main(env,cand)
+    --     end
+    --     return
+    -- end  
     for cand in input:iter() do
+        -- logdic(cand.preedit)
         yield(cand)
     end
     
@@ -925,17 +943,20 @@ function AuxFilter.ybtrans()
         return
     end
 end
-
+-- 使用示例
 
 function AuxFilter.func(input, env)
     env.notifiermark = -1
     AuxFilter.firstcandipre = {}
     AuxFilter.yieldset = {}
+    AuxFilter.leftcompen = 0
+    AuxFilter.rightcompen = 0
     local context = env.engine.context
     --- 预处理输入码
     AuxFilter.inputCode = context.input --输入码
     -- log.info("输入码",AuxFilter.inputCode)
     AuxFilter.precode = context:get_preedit().text --预处理码 
+    -- logdic(context:get_script_text())
     AuxFilter.removeAuxInput = AuxFilter.inputCode:match("^(%a+)" .. AuxFilter.trigger_key_pattern.."-")  or ""--纯输入引导键前的部分
     -- log.info("引导键前的输入",AuxFilter.removeAuxInput)
     AuxFilter.removeAuxprecode = AuxFilter.precode:match("^([^" .. AuxFilter.trigger_key_pattern .. "]*)" .. AuxFilter.trigger_key_pattern.."-") or "" --去除辅码后的pre
@@ -946,14 +967,19 @@ function AuxFilter.func(input, env)
     AuxFilter.transdcode = string.gsub(AuxFilter.removeAuxprecode,AuxFilter.removetransdInput,"")  --已翻译部分
     -- log.info("已翻译部分",AuxFilter.transdcode)
     AuxFilter.transdcodei = string.gsub(AuxFilter.removeAuxInput,AuxFilter.removetransdInput,"")  --已翻译字母部分
+
     -- log.info("已翻译的字母",AuxFilter.transdcodei)
     -- 云词处理
-    AuxFilter.ybtrans()
+    if AuxFilter.yun_or then
+        AuxFilter.ybtrans()
+    end
+
     -- log.info(#(AuxFilter.firstcandipre))
     -- 分流
     local pattern_main1 = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*$'  --辅筛分支的正则
     local pattern_long = "^%a+" ..AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .."+%a*$" --长句修改分支的正则
     local pattern_singlechar = "^" .. AuxFilter.trigger_key_pattern .. "%a%a%a?%a?$"  -- 单字输入分支
+    local pattern_odds_char = ""
     if string.match(AuxFilter.inputCode,pattern_main1)then
         -- log.info("进入分支1",AuxFilter.inputCode)
         AuxFilter.main1(input,env)
@@ -965,8 +991,12 @@ function AuxFilter.func(input, env)
         -- log.info("进入分支3",AuxFilter.inputCode)
     --都不匹配直接返回的分支
     else
-        AuxFilter.defaultmain(input)
-        end
+        AuxFilter.defaultmain(input,env)
+    end
+    -- local url = "https://chatgpt.com/c/67f3a89e-d250-8009-8373-ddd2e5b7eb6f"
+    -- -- logdic("云拼音请求"..AuxFilter.removetransdInput)
+    -- local reply = http.request(url)
+    -- env.engine.context.input = "aaaaa"
     
 end
 
