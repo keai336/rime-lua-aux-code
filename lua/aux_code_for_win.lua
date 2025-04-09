@@ -716,7 +716,7 @@ function AuxFilter.defaultmain(input,env)
     -- end  
     for cand in input:iter() do
         -- logdic(cand.preedit)
-        yield(cand)
+        AuxFilter.yield_candisub(cand,#cand.text)
     end
     
 end
