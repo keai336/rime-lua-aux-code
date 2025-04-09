@@ -793,8 +793,8 @@ function AuxFilter.longcandimodify(input,env)
     --在断点处修音逻辑
     if branchmark==2 then
         env.notifiermark = 3 --修音模式下,选词后的逻辑的标志变为3
-        local wrongyb = inputspls[compensate]
-        inputspls[compensate] = ybmodif
+        local wrongyb = inputspls[compensate+1]
+        inputspls[compensate+1] = ybmodif
         local inputcode2 = table.concat(inputspls,"")  --修改后的未翻译音码连接为字符串
         -- log.info(inputcode2)
         AuxFilter.ybmodifiedcode = AuxFilter.transdcodei .. inputcode2 .. AuxFilter.trigger_key  --修改后的音码 + 引导键
