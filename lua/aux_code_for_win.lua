@@ -476,6 +476,22 @@ function AuxFilter.match(fullAux, auxStr)
     -- return vgpipw or fjpipw
     return mark
 end
+local function split_pinyin(pinyin_str)
+    if not pinyin_str then return {} end
+    local syllables = {}
+    for syllable in pinyin_str:gmatch("[^ ]+") do
+        table.insert(syllables, syllable)
+    end
+    return syllables
+end
+
+function slice(tbl, start_idx, end_idx)
+    local sliced = {}
+    for i = start_idx, end_idx do
+        table.insert(sliced, tbl[i])
+    end
+    return sliced
+end
 -- 返回指定长度的候选
 function AuxFilter.yield_candisub(cand,len)
     
@@ -485,9 +501,12 @@ function AuxFilter.yield_candisub(cand,len)
     if fiend>cand._end then
         fiend = cand._end
     end
+    local preeditls = split_pinyin(cand.preedit)
     -- local finalcandi = Candidate(cand.type,cand._start,fiend,candset,cand.comment)
     local finalcandi = Candidate(cand.type,cand._start,fiend,candset,cand.comment)
     -- finalcandi.preedit = cand.preedit:sub(cand._start,fiend)
+    local finalpreedit = table.concat(slice(preeditls,1,len)," ") -- 计算新的拼音预编辑
+    finalcandi.preedit = finalpreedit -- 设置新的拼音预编辑
     if AuxFilter.yieldset[finalcandi.text]~=nil then
         return    
     end
