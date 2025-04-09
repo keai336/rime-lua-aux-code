@@ -934,6 +934,9 @@ end
 
 
 function AuxFilter.ybtrans()
+    if ~AuxFilter.yun_or then
+        return
+    end
     local l = #AuxFilter.removetransdInput
     if l<=4 then
         return
