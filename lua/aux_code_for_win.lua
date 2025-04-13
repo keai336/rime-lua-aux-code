@@ -492,7 +492,6 @@ function slice(tbl, start_idx, end_idx)
 end
 -- 返回指定长度的候选
 function AuxFilter.yield_candisub(cand)
-    AuxFilter.counter = AuxFilter.counter or 0
     if AuxFilter.counter==0 then
         if AuxFilter.ficompensate == nil then
             AuxFilter.ficompensate = (cand._end-cand._start)/2
@@ -515,13 +514,15 @@ function AuxFilter.yield_candisub(cand)
     -- finalcandi.preedit = cand.preedit:sub(cand._start,fiend)
     local finalpreedit = table.concat(slice(preeditls,1,len)," ") -- 计算新的拼音预编辑
     finalcandi.preedit = finalpreedit -- 设置新的拼音预编辑
-    if AuxFilter.yieldset[finalcandi.text]~=nil then
+    if AuxFilter.yieldset[finalcandi.text]~=nil or finalcandi.text == AuxFilter.last_fist_commit then
         return    
     end
     AuxFilter.yieldset[finalcandi.text] = true
-    AuxFilter.skipc = AuxFilter.skipc or 0
     if AuxFilter.skipc<=0 then
         AuxFilter.counter = AuxFilter.counter+1
+        if AuxFilter.counter == 1 then
+            AuxFilter.last_fist_commit = finalcandi.text
+        end
         yield(finalcandi)
     else
         AuxFilter.skipc=AuxFilter.skipc-1
