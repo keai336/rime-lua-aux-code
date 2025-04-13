@@ -227,17 +227,20 @@ function AuxFilter.main1_notifier(ctx)
         else
             -- 剩下的直接上屏
             -- log.info(AuxFilter.transdcode,AuxFilter.removeAuxInput)
+            ctx:commit()
             -- logdic(commit.text .. "|" .. commit.type .. "|" .. AuxFilter.removeAuxInput .. "|" .. AuxFilter.transdcode .. "|" .. xh_sp_code_2_qp(AuxFilter.removeAuxInput))
             --- 只记录词
-            if utf8len(AuxFilter.transdcode)>1 then
-                local entry = DictEntry()
-                entry.text = AuxFilter.transdcode:gsub("‸+$", "")
-                -- logdic(entry.text)
-                entry.custom_code = xh_sp_code_2_qp(AuxFilter.removeAuxInput) .. " "
-                AuxFilter.memory:start_session()
-                local r = AuxFilter.memory:update_userdict(entry, 1, "")
-                AuxFilter.memory:finish_session()
-            end
+            local entry = DictEntry()
+            entry.text = AuxFilter.transdcode:gsub("‸+$", "")
+            -- logdic(entry.text)
+            entry.custom_code = xh_sp_code_2_qp(AuxFilter.removeAuxInput) .. " "
+            AuxFilter.memory:start_session()
+            local r = AuxFilter.memory:update_userdict(entry, 1, "")
+            AuxFilter.memory:finish_session()
+            -- if utf8len(AuxFilter.transdcode)>1 then
+            --     -- logdic(AuxFilter.transdcode .. "," .. AuxFilter.removeAuxInput) 
+  
+            -- end
 
         end
     end
@@ -488,8 +491,18 @@ function slice(tbl, start_idx, end_idx)
     return sliced
 end
 -- 返回指定长度的候选
-function AuxFilter.yield_candisub(cand,len)
-    
+function AuxFilter.yield_candisub(cand)
+    AuxFilter.counter = AuxFilter.counter or 0
+    if AuxFilter.counter==0 then
+        if AuxFilter.ficompensate == nil then
+            AuxFilter.ficompensate = (cand._end-cand._start)/2
+        end
+        AuxFilter.ficompensate = AuxFilter.ficompensate - AuxFilter.leftcompen + AuxFilter.rightcompen
+        if AuxFilter.ficompensate<=0 then
+            AuxFilter.ficompensate = 1
+        end
+    end
+    local len = AuxFilter.ficompensate
     local candset = utf8sub(cand.text,1,len)
     local _end = 2*len
     local fiend = cand._start+_end
@@ -508,8 +521,8 @@ function AuxFilter.yield_candisub(cand,len)
     AuxFilter.yieldset[finalcandi.text] = true
     AuxFilter.skipc = AuxFilter.skipc or 0
     if AuxFilter.skipc<=0 then
+        AuxFilter.counter = AuxFilter.counter+1
         yield(finalcandi)
-        
     else
         AuxFilter.skipc=AuxFilter.skipc-1
     end
@@ -583,29 +596,12 @@ local function main_main(env,cand)
         end
     end
     -- 過濾輔助碼
-    AuxFilter.counter = AuxFilter.counter or 0
     if #(AuxFilter.auxStr) == 0 then
         -- 沒有輔助碼、不需篩選，直接返回待選項
-        if AuxFilter.counter==0 then
-            local compensate = cand._end - cand._start
-            AuxFilter.ficompensate = compensate/2 - AuxFilter.leftcompen + AuxFilter.rightcompen
-            if AuxFilter.ficompensate<=0 then
-                AuxFilter.ficompensate = 1
-            end
-        end
-        AuxFilter.counter=AuxFilter.counter+1
-        AuxFilter.yield_candisub(cand,AuxFilter.ficompensate)
+        AuxFilter.yield_candisub(cand)
     elseif #(AuxFilter.auxStr) > 0 and fullAuxCodes and  AuxFilter.match(fullAuxCodes, AuxFilter.auxStr) then
         -- 匹配到辅助码的待选项，直接插入到候选框中( 获得靠前的位置 )
-        if AuxFilter.counter==0 then
-            local compensate = cand._end - cand._start
-            AuxFilter.ficompensate = compensate/2 - AuxFilter.leftcompen + AuxFilter.rightcompen
-            if AuxFilter.ficompensate<=0 then
-                AuxFilter.ficompensate = 1
-            end
-        end
-        AuxFilter.counter = AuxFilter.counter+1
-        AuxFilter.yield_candisub(cand,AuxFilter.ficompensate)
+        AuxFilter.yield_candisub(cand)
     else
         -- 待选项字词 没有 匹配到当前的辅助码，插入到列表中，最后插入到候选框里( 获得靠后的位置 )
         -- table.insert(insertLater, cand)
@@ -711,7 +707,7 @@ function AuxFilter.defaultmain(input,env)
     -- end  
     for cand in input:iter() do
         -- logdic(cand.preedit)
-        AuxFilter.yield_candisub(cand,#cand.text)
+        AuxFilter.yield_candisub(cand)
     end
     
 end
@@ -771,10 +767,10 @@ function AuxFilter.longcandimodify(input,env)
     end
     -- log.info("音码",ybmodif)
     -- log.info("funccode",funccode)
-    local leftcompen = countSubstringOccurrences(funccode,"a") --左偏移量
-    local rightcompen = countSubstringOccurrences(funccode,"d") + 2 * countSubstringOccurrences(funccode,"f") -- 右偏移量
+    AuxFilter.leftcompen = countSubstringOccurrences(funccode,"a") --左偏移量
+    AuxFilter.rightcompen = countSubstringOccurrences(funccode,"d") + 2 * countSubstringOccurrences(funccode,"f") -- 右偏移量
     local inputspls  = splitToPairs(AuxFilter.removetransdInput) --把未翻译的音码拆成单字音码列表  {音码1,音码2}
-    local compensate = utf8len(firstcandi.text) --初始化偏移量  默认在断点尾部
+    AuxFilter.ficompensate = utf8len(firstcandi.text) --初始化偏移量  默认在断点尾部
     local passnum = countSubstringOccurrences(AuxFilter.inputCode,AuxFilter.trigger_key) -2  --计算跳过匹配数  功能码中 ; 的作用
     -- log.info(inputspls[1])
     --确定最终断点位置
@@ -782,7 +778,7 @@ function AuxFilter.longcandimodify(input,env)
     for index, value in ipairs(inputspls) do
         local auxtab = AuxFilter.comb_code[value]
         if combmath(auxcode,auxtab) then
-            compensate = index
+            AuxFilter.ficompensate = index
             matchedmark= true
             if passnum==0 then
             break
@@ -794,21 +790,14 @@ function AuxFilter.longcandimodify(input,env)
     -- if compensate<=0 then
     --     compensate=1
     -- end
-    compensate = compensate + rightcompen - leftcompen
     if matchedmark then
-       compensate = compensate -1  --减1是要断在作用词之前  
+       AuxFilter.ficompensate = AuxFilter.ficompensate -1  --减1是要断在作用词之前  
     end
-  
-    --如果前面没字就上一个
-    if compensate<=0 then
-        compensate =1
-    end
-
     --在断点处修音逻辑
     if branchmark==2 then
         env.notifiermark = 3 --修音模式下,选词后的逻辑的标志变为3
-        local wrongyb = inputspls[compensate+1]
-        inputspls[compensate+1] = ybmodif
+        local wrongyb = inputspls[AuxFilter.ficompensate+1]
+        inputspls[AuxFilter.ficompensate+1] = ybmodif
         local inputcode2 = table.concat(inputspls,"")  --修改后的未翻译音码连接为字符串
         -- log.info(inputcode2)
         AuxFilter.ybmodifiedcode = AuxFilter.transdcodei .. inputcode2 .. AuxFilter.trigger_key  --修改后的音码 + 引导键
@@ -820,7 +809,7 @@ function AuxFilter.longcandimodify(input,env)
     --在断点处断句逻辑
     elseif branchmark==1 then
         local comment = ""
-    local finalcandi = AuxFilter.yield_candisub(firstcandi,compensate)
+    local finalcandi = AuxFilter.yield_candisub(firstcandi)
     if not matchedmark then
         comment = "辅码无匹配"
     end
@@ -934,9 +923,6 @@ end
 
 
 function AuxFilter.ybtrans()
-    if ~AuxFilter.yun_or then
-        return
-    end
     local l = #AuxFilter.removetransdInput
     if l<=4 then
         return
@@ -962,12 +948,15 @@ function AuxFilter.ybtrans()
 end
 -- 使用示例
 
-function AuxFilter.func(input, env)
+function AuxFilter.func(input, env) 
     env.notifiermark = -1
     AuxFilter.firstcandipre = {}
     AuxFilter.yieldset = {}
     AuxFilter.leftcompen = 0
     AuxFilter.rightcompen = 0
+    AuxFilter.skipc = 0
+    AuxFilter.ficompensate = nil
+    AuxFilter.counter = 0
     local context = env.engine.context
     --- 预处理输入码
     AuxFilter.inputCode = context.input --输入码
