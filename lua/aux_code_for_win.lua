@@ -308,6 +308,14 @@ local function two_char_combinations(str)
     
     return result
 end
+-- 輔助函數，用於獲取表格的所有鍵
+local function table_keys(t)
+    local keys = {}
+    for key, _ in pairs(t) do
+        table.insert(keys, key)
+    end
+    return keys
+end
 ----------------
 ----------------
 -- 閱讀輔碼文件 --
@@ -331,36 +339,61 @@ function AuxFilter.readAuxTxt(txtpath)
         error("Unable to open auxiliary code file.")
         return {}
     end
-
-    local auxCodes = {} -- 字 ：{全辅码}
-    local mixedCodes= {}  --{音码:{可匹配的辅码集}}
-    local zi_to_yin = {}  --{字：音}
+    local auxCodesSet = {}   -- 字 -> {fu = true}
+    local mixedCodes = {}    -- 音码 -> 辅码 -> {字列表}
+    local zi_to_yin = {}     -- 字 -> {音码}
+    
     for line in file:lines() do
-        line = line:match("[^\r\n]+") -- 去掉換行符，不然 value 是帶著 \n 的
-        -- local key, value = line:match("([^=]+)=(.+)") -- 分割 = 左右的變數
-        local zi,yb,fu = string.match(line,"([^\t]+)\t([^\t]+)\t([^\t]+)")
-        -- local key = zi
-        -- local value = xk
-        -- log.info(key,value)
-        local fuset = two_char_combinations(fu)
-        if zi and fu and yb then
-            -- auxCodes 的逻辑不变
-            auxCodes[zi] = auxCodes[zi] or {}
-            table.insert(auxCodes[zi], fu)
+        line = line:match("[^\r\n]+")  -- 去除换行符
+        local zi, yb, fu = string.match(line, "([^\t]+)\t([^\t]+)\t([^\t]+)")
+    
+        if zi and yb and fu then
+            -- 辅码组合
+            local fuset = two_char_combinations(fu)
+    
+            -- 构建 auxCodesSet（先使用 set 防止重复）
+            auxCodesSet[zi] = auxCodesSet[zi] or {}
+            auxCodesSet[zi][fu] = true  -- 使用哈希防止重复插入
+    
+            -- 构建 zi_to_yin
             zi_to_yin[zi] = zi_to_yin[zi] or {}
-            table.insert(zi_to_yin[zi],yb)
-            --加入mixedcodes的逻辑  这里只考虑到音码是两位,且完整辅码是两位
+            table.insert(zi_to_yin[zi], yb)
+    
+            -- 构建 mixedCodes
             mixedCodes[yb] = mixedCodes[yb] or {}
-            for k,v in ipairs(fuset) do
-                mixedCodes[yb][v] = mixedCodes[yb][v] or {}
-                table.insert(mixedCodes[yb][v],zi)
+            for _, comb in ipairs(fuset) do
+                mixedCodes[yb][comb] = mixedCodes[yb][comb] or {}
+                mixedCodes[yb][comb][zi] = true
             end
-
         end
     end
+    
+    -- 转换 auxCodesSet 为数组 auxCodes
+    local auxCodes = {}
+    for zi, fu_set in pairs(auxCodesSet) do
+        auxCodes[zi] = {}
+        for fu in pairs(fu_set) do
+            table.insert(auxCodes[zi], fu)
+        end
+    end
+    
+    -- 转换 mixedCodes 中的 zi set 为数组
+    for yb, fus in pairs(mixedCodes) do
+        for fu, zi_set in pairs(fus) do
+            local zi_list = {}
+            for zi in pairs(zi_set) do
+                table.insert(zi_list, zi)
+            end
+            mixedCodes[yb][fu] = zi_list
+        end
+    end
+    
+    -- 最终赋值
     AuxFilter.aux_code = auxCodes
     AuxFilter.comb_code = mixedCodes
     AuxFilter.zi_to_yin = zi_to_yin
+    
+    
     -- log.info(#mixedCodes)
     file:close()
     if AuxFilter.yun_or then
@@ -512,6 +545,17 @@ function AuxFilter.yield_candisub(cand)
     local len = AuxFilter.ficompensate
     local candset = utf8sub(cand.text,1,len)
     local _end = 2*len
+    -- for i=1,utf8len(candset) do
+    --     local zi = utf8sub(candset,i,i)
+    --     local yb = AuxFilter.zi_to_yin[zi]
+    --     for k,v in ipairs(yb) do
+    --         logdic(zi .. v)
+    --     end
+        
+    -- end
+    -- local function len_of_candsubs_input(cand)
+        
+    -- end
     local fiend = cand._start+_end
     if fiend>cand._end then
         fiend = cand._end
@@ -538,14 +582,7 @@ function AuxFilter.yield_candisub(cand)
 
 end
 
--- 輔助函數，用於獲取表格的所有鍵
-local function table_keys(t)
-    local keys = {}
-    for key, _ in pairs(t) do
-        table.insert(keys, key)
-    end
-    return keys
-end
+
 -- 辅码与音码匹配与否
 local function boolaux(tab)
     local mark = false
