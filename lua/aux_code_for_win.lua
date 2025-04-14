@@ -339,27 +339,26 @@ function AuxFilter.readAuxTxt(txtpath)
         error("Unable to open auxiliary code file.")
         return {}
     end
-    local auxCodesSet = {}   -- 字 -> {fu = true}
-    local mixedCodes = {}    -- 音码 -> 辅码 -> {字列表}
-    local zi_to_yin = {}     -- 字 -> {音码}
+    local zi_to_yin_set = {}   -- 字 -> set：{[音码] = true}
+    local auxCodesSet = {}     -- 字 -> set：{[辅码] = true}
+    local mixedCodes = {}      -- 音码 -> 辅码 -> {字 set}
     
     for line in file:lines() do
         line = line:match("[^\r\n]+")  -- 去除换行符
         local zi, yb, fu = string.match(line, "([^\t]+)\t([^\t]+)\t([^\t]+)")
     
         if zi and yb and fu then
-            -- 辅码组合
             local fuset = two_char_combinations(fu)
     
-            -- 构建 auxCodesSet（先使用 set 防止重复）
+            -- 1. 去重插入 auxCodesSet
             auxCodesSet[zi] = auxCodesSet[zi] or {}
-            auxCodesSet[zi][fu] = true  -- 使用哈希防止重复插入
+            auxCodesSet[zi][fu] = true
     
-            -- 构建 zi_to_yin
-            zi_to_yin[zi] = zi_to_yin[zi] or {}
-            table.insert(zi_to_yin[zi], yb)
+            -- 2. 去重插入 zi_to_yin_set
+            zi_to_yin_set[zi] = zi_to_yin_set[zi] or {}
+            zi_to_yin_set[zi][yb] = true
     
-            -- 构建 mixedCodes
+            -- 3. mixedCodes 构建为 set
             mixedCodes[yb] = mixedCodes[yb] or {}
             for _, comb in ipairs(fuset) do
                 mixedCodes[yb][comb] = mixedCodes[yb][comb] or {}
@@ -368,7 +367,9 @@ function AuxFilter.readAuxTxt(txtpath)
         end
     end
     
-    -- 转换 auxCodesSet 为数组 auxCodes
+    -- 将 set 转换为数组形式（后处理）
+    
+    -- auxCodes: 字 -> {辅码列表}
     local auxCodes = {}
     for zi, fu_set in pairs(auxCodesSet) do
         auxCodes[zi] = {}
@@ -377,7 +378,16 @@ function AuxFilter.readAuxTxt(txtpath)
         end
     end
     
-    -- 转换 mixedCodes 中的 zi set 为数组
+    -- zi_to_yin: 字 -> {音码列表}
+    local zi_to_yin = {}
+    for zi, yin_set in pairs(zi_to_yin_set) do
+        zi_to_yin[zi] = {}
+        for yb in pairs(yin_set) do
+            table.insert(zi_to_yin[zi], yb)
+        end
+    end
+    
+    -- mixedCodes: 音码 -> 辅码 -> {字列表}
     for yb, fus in pairs(mixedCodes) do
         for fu, zi_set in pairs(fus) do
             local zi_list = {}
@@ -392,6 +402,7 @@ function AuxFilter.readAuxTxt(txtpath)
     AuxFilter.aux_code = auxCodes
     AuxFilter.comb_code = mixedCodes
     AuxFilter.zi_to_yin = zi_to_yin
+    
     
     
     -- log.info(#mixedCodes)
@@ -545,14 +556,28 @@ function AuxFilter.yield_candisub(cand)
     local len = AuxFilter.ficompensate
     local candset = utf8sub(cand.text,1,len)
     local _end = 2*len
+    -- local stindex = {}
     -- for i=1,utf8len(candset) do
+    --     local index = 1
     --     local zi = utf8sub(candset,i,i)
     --     local yb = AuxFilter.zi_to_yin[zi]
-    --     for k,v in ipairs(yb) do
-    --         logdic(zi .. v)
+    --     if yb then
+    --         for _,v in ipairs(yb) do
+    --             local s,e = AuxFilter.removetransdInput:find(v)
+    --             if e~=nil then
+    --                 if e>index then
+    --                     table.insert(stindex,e)
+    --                     index = e
+    --                     break
+    --                 end
+    --             end
+    --         end  
+    --     else
+    --         return
     --     end
-        
+
     -- end
+    -- local _end = stindex[len]
     -- local function len_of_candsubs_input(cand)
         
     -- end
