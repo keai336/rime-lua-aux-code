@@ -227,16 +227,19 @@ function AuxFilter.main1_notifier(ctx)
         else
             -- 剩下的直接上屏
             -- log.info(AuxFilter.transdcode,AuxFilter.removeAuxInput)
-            ctx:commit()
             -- logdic(commit.text .. "|" .. commit.type .. "|" .. AuxFilter.removeAuxInput .. "|" .. AuxFilter.transdcode .. "|" .. xh_sp_code_2_qp(AuxFilter.removeAuxInput))
             --- 只记录词
-            local entry = DictEntry()
-            entry.text = AuxFilter.transdcode:gsub("‸+$", "")
-            -- logdic(entry.text)
-            entry.custom_code = xh_sp_code_2_qp(AuxFilter.removeAuxInput) .. " "
-            AuxFilter.memory:start_session()
-            local r = AuxFilter.memory:update_userdict(entry, 1, "")
-            AuxFilter.memory:finish_session()
+            --- 
+            if utf8len(AuxFilter.transdcode)>1 then
+                local entry = DictEntry()
+                entry.text = AuxFilter.transdcode:gsub("‸+$", "")
+                -- logdic(entry.text)
+                entry.custom_code = xh_sp_code_2_qp(AuxFilter.removeAuxInput) .. " "
+                AuxFilter.memory:start_session()
+                local r = AuxFilter.memory:update_userdict(entry, 1, "")
+                AuxFilter.memory:finish_session()
+            end
+            ctx:commit()
             -- if utf8len(AuxFilter.transdcode)>1 then
             --     -- logdic(AuxFilter.transdcode .. "," .. AuxFilter.removeAuxInput) 
   
