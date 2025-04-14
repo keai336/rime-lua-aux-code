@@ -548,16 +548,17 @@ local function ybsplit_indexls(candset)
         local zi = utf8sub(candset,i,i)
         local yb = AuxFilter.zi_to_yin[zi]
         if yb then
+            local fe = 1000
             for _,v in ipairs(yb) do
                 local s,e = AuxFilter.removetransdInput:find(v,lastindex+1)
                 if e~=nil then
-                    if e>lastindex then
-                        table.insert(stindex,e)
-                        lastindex = e
-                        break
+                    if e>lastindex and e<fe then
+                        fe = e
                     end
                 end
-            end  
+            end
+            table.insert(stindex,fe)
+            lastindex = fe
         else
             return {}
             --- 如果是包含非汉字候选，直接返回。
@@ -567,7 +568,6 @@ local function ybsplit_indexls(candset)
 end
 -- 返回指定长度的候选
 function AuxFilter.yield_candisub(cand)
-    logdic(cand.text)
     if AuxFilter.counter==0 then
         if AuxFilter.ficompensate == nil then
             -- AuxFilter.ficompensate = (cand._end-cand._start)/2
