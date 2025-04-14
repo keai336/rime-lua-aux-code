@@ -334,6 +334,7 @@ function AuxFilter.readAuxTxt(txtpath)
 
     local auxCodes = {} -- 字 ：{全辅码}
     local mixedCodes= {}  --{音码:{可匹配的辅码集}}
+    local zi_to_yin = {}  --{字：音}
     for line in file:lines() do
         line = line:match("[^\r\n]+") -- 去掉換行符，不然 value 是帶著 \n 的
         -- local key, value = line:match("([^=]+)=(.+)") -- 分割 = 左右的變數
@@ -344,8 +345,10 @@ function AuxFilter.readAuxTxt(txtpath)
         local fuset = two_char_combinations(fu)
         if zi and fu and yb then
             -- auxCodes 的逻辑不变
-            auxCodes[zi] = auxCodes[zi] or {}  
+            auxCodes[zi] = auxCodes[zi] or {}
             table.insert(auxCodes[zi], fu)
+            zi_to_yin[zi] = zi_to_yin[zi] or {}
+            table.insert(zi_to_yin[zi],yb)
             --加入mixedcodes的逻辑  这里只考虑到音码是两位,且完整辅码是两位
             mixedCodes[yb] = mixedCodes[yb] or {}
             for k,v in ipairs(fuset) do
@@ -357,6 +360,7 @@ function AuxFilter.readAuxTxt(txtpath)
     end
     AuxFilter.aux_code = auxCodes
     AuxFilter.comb_code = mixedCodes
+    AuxFilter.zi_to_yin = zi_to_yin
     -- log.info(#mixedCodes)
     file:close()
     if AuxFilter.yun_or then
