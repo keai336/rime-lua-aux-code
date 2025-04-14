@@ -541,8 +541,33 @@ function slice(tbl, start_idx, end_idx)
     end
     return sliced
 end
+local function ybsplit_indexls(candset)
+    local lastindex = 0
+    local stindex = {}
+    for i=1,utf8len(candset) do
+        local zi = utf8sub(candset,i,i)
+        local yb = AuxFilter.zi_to_yin[zi]
+        if yb then
+            for _,v in ipairs(yb) do
+                local s,e = AuxFilter.removetransdInput:find(v,lastindex+1)
+                if e~=nil then
+                    if e>lastindex then
+                        table.insert(stindex,e)
+                        lastindex = e
+                        break
+                    end
+                end
+            end  
+        else
+            return {}
+            --- 如果是包含非汉字候选，直接返回。
+        end
+    end
+    return stindex
+end
 -- 返回指定长度的候选
 function AuxFilter.yield_candisub(cand)
+    logdic(cand.text)
     if AuxFilter.counter==0 then
         if AuxFilter.ficompensate == nil then
             -- AuxFilter.ficompensate = (cand._end-cand._start)/2
@@ -554,41 +579,23 @@ function AuxFilter.yield_candisub(cand)
         end
     end
     local len = AuxFilter.ficompensate
+    if len>utf8len(cand.text) then
+        len = utf8len(cand.text)
+    end
     local candset = utf8sub(cand.text,1,len)
-    local _end = 2*len
-    -- local stindex = {}
-    -- for i=1,utf8len(candset) do
-    --     local index = 1
-    --     local zi = utf8sub(candset,i,i)
-    --     local yb = AuxFilter.zi_to_yin[zi]
-    --     if yb then
-    --         for _,v in ipairs(yb) do
-    --             local s,e = AuxFilter.removetransdInput:find(v)
-    --             if e~=nil then
-    --                 if e>index then
-    --                     table.insert(stindex,e)
-    --                     index = e
-    --                     break
-    --                 end
-    --             end
-    --         end  
-    --     else
-    --         return
-    --     end
-
-    -- end
-    -- local _end = stindex[len]
-    -- local function len_of_candsubs_input(cand)
-        
-    -- end
+    -- local _end = 2*len
+    local stindex = ybsplit_indexls(candset)
+    if #stindex==0 then  --不合法的情况。
+        return
+    end
+    local _end = stindex[len]
     local fiend = cand._start+_end
     if fiend>cand._end then
         fiend = cand._end
     end
+    logdic(candset .. tostring(_end))
     local preeditls = split_pinyin(cand.preedit)
-    -- local finalcandi = Candidate(cand.type,cand._start,fiend,candset,cand.comment)
     local finalcandi = Candidate(cand.type,cand._start,fiend,candset,cand.comment)
-    -- finalcandi.preedit = cand.preedit:sub(cand._start,fiend)
     local finalpreedit = table.concat(slice(preeditls,1,len)," ") -- 计算新的拼音预编辑
     finalcandi.preedit = finalpreedit -- 设置新的拼音预编辑
     if AuxFilter.yieldset[finalcandi.text]~=nil or finalcandi.text == AuxFilter.last_fist_commit then
