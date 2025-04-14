@@ -524,7 +524,7 @@ function AuxFilter.yield_candisub(cand)
     AuxFilter.yieldset[finalcandi.text] = true
     if AuxFilter.skipc<=0 then
         AuxFilter.counter = AuxFilter.counter+1
-        if AuxFilter.counter == 1  and AuxFilter.dynimic_or then
+        if AuxFilter.counter == 1 then
             AuxFilter.last_fist_commit = finalcandi.text
         end
         yield(finalcandi)
@@ -712,7 +712,7 @@ function AuxFilter.defaultmain(input,env)
     -- end  
     for cand in input:iter() do
         -- logdic(cand.preedit)
-        AuxFilter.yield_candisub(cand)
+        yield(cand)
     end
     
 end
@@ -994,7 +994,6 @@ function AuxFilter.func(input, env)
     local pattern_long = "^%a+" ..AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .."+%a*$" --长句修改分支的正则
     local pattern_singlechar = "^" .. AuxFilter.trigger_key_pattern .. "%a%a%a?%a?$"  -- 单字输入分支
     local pattern_odds_char = ""
-    AuxFilter.dynimic_or = true
     if string.match(AuxFilter.inputCode,pattern_main1)then
         -- log.info("进入分支1",AuxFilter.inputCode)
         AuxFilter.main1(input,env)
@@ -1006,7 +1005,6 @@ function AuxFilter.func(input, env)
         -- log.info("进入分支3",AuxFilter.inputCode)
     --都不匹配直接返回的分支
     else
-        AuxFilter.dynimic_or = false
         AuxFilter.last_fist_commit = nil
         AuxFilter.defaultmain(input,env)
     end
