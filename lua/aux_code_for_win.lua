@@ -316,6 +316,13 @@ local function table_keys(t)
     end
     return keys
 end
+local function str_table(tbl)
+    local lines = {}
+    for k, v in pairs(tbl) do
+        table.insert(lines, tostring(k) .. "=" .. tostring(v))
+    end
+    return table.concat(lines, "\n")
+end
 ----------------
 ----------------
 -- 閱讀輔碼文件 --
@@ -601,14 +608,29 @@ function AuxFilter.yield_candisub(cand)
     local finalcandi = Candidate(cand.type,cand._start,fiend,candset,cand.comment)
     local finalpreedit = table.concat(slice(preeditls,1,len)," ") -- 计算新的拼音预编辑
     finalcandi.preedit = finalpreedit -- 设置新的拼音预编辑
-    if AuxFilter.yieldset[finalcandi.text]~=nil or finalcandi.text == AuxFilter.last_fist_commit then
+    if (AuxFilter.yieldset[finalcandi.text]~=nil)then
         return    
     end
+    AuxFilter.last_fist_commit = AuxFilter.last_fist_commit or {}
+    if #AuxFilter.auxStr == 1 then
+        if AuxFilter.last_fist_commit[1] == finalcandi.text then
+            return
+        end
+    elseif #AuxFilter.auxStr == 2 then
+        if AuxFilter.last_fist_commit[1] == finalcandi.text or AuxFilter.last_fist_commit[2] == finalcandi.text then
+            return
+        end
+    end
+
     AuxFilter.yieldset[finalcandi.text] = true
     if AuxFilter.skipc<=0 then
         AuxFilter.counter = AuxFilter.counter+1
         if AuxFilter.counter == 1 then
-            AuxFilter.last_fist_commit = finalcandi.text
+            if #AuxFilter.auxStr == 0 then
+                AuxFilter.last_fist_commit[1] = finalcandi.text
+            elseif #AuxFilter.auxStr == 1 then
+                AuxFilter.last_fist_commit[2] = finalcandi.text
+            end
         end
         yield(finalcandi)
     else
@@ -654,6 +676,7 @@ return mark
 end
 local function main_main(env,cand)
     local auxCodes = AuxFilter.aux_code[cand.text] -- 僅單字非 nil
+    -- logdic(cand.text)
     local fullAuxCodes = AuxFilter.fullAux(env, cand.text)
 
     -- 查看 auxCodes
@@ -730,15 +753,18 @@ function AuxFilter.main1(input,env)
     local firstcandi = ""      -- 第一个候选也就是最长的那个
     local index=0  --为了获取第一个候选的判断变量
     for cand in input:iter() do
-        firstcandi = cand
-        -- log.info(cand.text,ficompensate)
-        AuxFilter.stindex = ybsplit_indexls(firstcandi.text)
-        if #AuxFilter.stindex==0 then  --不合法的情况。
-            return
-        end
-        index = index+1
+         index = index+1
         --第一个候选词 额外逻辑
         if index==1 then
+            firstcandi = cand
+            -- logdic("修改")
+            -- logdic(firstcandtext .. "修改后")
+            AuxFilter.stindex = ybsplit_indexls(firstcandi.text)
+            logdic(str_table(AuxFilter.stindex))
+            if #AuxFilter.stindex==0 then  --不合法的情况。
+                logdic("不合法的情况")
+                return
+            end
             if #(AuxFilter.firstcandipre)~=0 then
                 local i = 0
                 for _, value in ipairs(AuxFilter.firstcandipre) do
@@ -757,33 +783,50 @@ function AuxFilter.main1(input,env)
                 
             end
             main_main(env,cand)   
+            -- logdic("After break, firstcandtext: " .. (firstcandtext or "NIL"))
             break
+
         end
 
     end
+
+    -- logdic("before second loop, firstcandtext: " .. (firstcandtext or "NIL"))
     for value in input:iter() do
+
         main_main(env,value)
+
     end
+    -- logdic("after second loop, firstcandtext: " .. (firstcandtext or "NIL"))
     --如果辅筛没筛出来,提示你进行辅断
     if AuxFilter.counter==0 then
         -- local inputspls  = splitToPairs(AuxFilter.removetransdInput) --未翻译的音码集合
         local inputspls = split_by_indices(AuxFilter.removetransdInput, AuxFilter.stindex) --未翻译的音码集合
         -- log.info("inputls")
+        -- logdic(str_table(inputspls))
         for i,v in ipairs(inputspls) do
-            logdic(v)
+            -- logdic(v)
         end
         local matchybtab = {} --辅码可以组合的未翻译的音码的集合
-        local firstcandtext = firstcandi.text
+        -- logdic("wu🐉"..firstcandtext)
         -- log.info(auxStr)
         for index, value in ipairs(inputspls) do
             -- log.info(index,value)
+            -- logdic("bbb")
+            -- logdic(value)
             local auxtab = AuxFilter.comb_code[value]
+            -- logdic("ccc")
             -- log.info(auxtab)
             if combmath(AuxFilter.auxStr,auxtab) then
                 -- log.info("111")
-                table.insert(matchybtab,tostring(index).."." .. utf8sub(firstcandtext,index,index))
+                -- logdic("匹配过去"..AuxFilter.auxStr.."|"..str_table(auxtab))
+                -- logdic(firstcandtext)
+                table.insert(matchybtab,tostring(index).."." .. utf8sub(firstcandi.text,index,index))
+                -- logdic("插入")
             end
         end
+        -- for i,v in ipairs(matchybtab) do
+        --     logdic(v)
+        -- end
         -- log.info(111)
         local commentfirst =  "无匹配"
         if #matchybtab~=0 then
@@ -840,7 +883,7 @@ function AuxFilter.longcandimodify(input,env)
     -- log.info("auxcode",auxcode)
     local funccode = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .. "+(%a*)") --功能码部分
     -- log.info("fucncode",funccode)
-    local ybmodif = funccode:match("s(%a%a)") --功能码部分捕获的修音的音码
+    local ybmodif = funccode:match("s(%a+)") --功能码部分捕获的修音的音码
     -- local yyciif = countSubstringOccurrences(funccode,"y")
     -- local pinyin = firstcandi.preedit:gsub("%s+", "")
     -- if  yyciif==1 then
