@@ -477,6 +477,15 @@ local function splitToPairs(str)
     return result
 end
 
+local function split_by_indices(str, indices)
+    local result = {}
+    local start_idx = 1
+    for _, idx in ipairs(indices) do
+        table.insert(result, string.sub(str, start_idx, idx))
+        start_idx = idx + 1
+    end
+    return result
+end
 -----------------------------------------------
 -- 判斷 auxStr 是否匹配 fullAux  --修改为了宽松匹配
 -----------------------------------------------
@@ -577,23 +586,21 @@ function AuxFilter.yield_candisub(cand)
         if AuxFilter.ficompensate<=0 then
             AuxFilter.ficompensate = 1
         end
+        AuxFilter.stindex = ybsplit_indexls(cand.text)
+        if #AuxFilter.stindex==0 then  --不合法的情况。
+            return
+        end
     end
     local len = AuxFilter.ficompensate
     if len>utf8len(cand.text) then
         len = utf8len(cand.text)
     end
     local candset = utf8sub(cand.text,1,len)
-    -- local _end = 2*len
-    local stindex = ybsplit_indexls(candset)
-    if #stindex==0 then  --不合法的情况。
-        return
-    end
-    local _end = stindex[len]
+    local _end = AuxFilter.stindex[len]
     local fiend = cand._start+_end
     if fiend>cand._end then
         fiend = cand._end
     end
-    logdic(candset .. tostring(_end))
     local preeditls = split_pinyin(cand.preedit)
     local finalcandi = Candidate(cand.type,cand._start,fiend,candset,cand.comment)
     local finalpreedit = table.concat(slice(preeditls,1,len)," ") -- 计算新的拼音预编辑
