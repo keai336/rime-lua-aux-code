@@ -749,7 +749,8 @@ function AuxFilter.main1(input,env)
     end
     --如果辅筛没筛出来,提示你进行辅断
     if AuxFilter.counter==0 then
-        local inputspls  = splitToPairs(AuxFilter.removetransdInput) --未翻译的音码集合
+        -- local inputspls  = splitToPairs(AuxFilter.removetransdInput) --未翻译的音码集合
+        local inputspls = split_by_indices(AuxFilter.removetransdInput, AuxFilter.stindex) --未翻译的音码集合
         -- log.info("inputls")
         local matchybtab = {} --辅码可以组合的未翻译的音码的集合
         local firstcandtext = firstcandi.text
@@ -854,7 +855,7 @@ function AuxFilter.longcandimodify(input,env)
     -- log.info("funccode",funccode)
     AuxFilter.leftcompen = countSubstringOccurrences(funccode,"a") --左偏移量
     AuxFilter.rightcompen = countSubstringOccurrences(funccode,"d") + 2 * countSubstringOccurrences(funccode,"f") -- 右偏移量
-    local inputspls  = splitToPairs(AuxFilter.removetransdInput) --把未翻译的音码拆成单字音码列表  {音码1,音码2}
+    local inputspls = split_by_indices(AuxFilter.removetransdInput, AuxFilter.stindex) --未翻译的音码集合
     AuxFilter.ficompensate = utf8len(firstcandi.text) --初始化偏移量  默认在断点尾部
     local passnum = countSubstringOccurrences(AuxFilter.inputCode,AuxFilter.trigger_key) -2  --计算跳过匹配数  功能码中 ; 的作用
     -- log.info(inputspls[1])
