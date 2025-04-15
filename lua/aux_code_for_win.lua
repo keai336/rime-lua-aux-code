@@ -586,10 +586,6 @@ function AuxFilter.yield_candisub(cand)
         if AuxFilter.ficompensate<=0 then
             AuxFilter.ficompensate = 1
         end
-        AuxFilter.stindex = ybsplit_indexls(cand.text)
-        if #AuxFilter.stindex==0 then  --不合法的情况。
-            return
-        end
     end
     local len = AuxFilter.ficompensate
     if len>utf8len(cand.text) then
@@ -693,6 +689,19 @@ local function main_main(env,cand)
         -- 更新逻辑：没有匹配上就不出现再候选框里，提升性能
     end
 end
+function len_of_zi(zi)
+    local len = 0
+    for i=1,utf8len(zi) do
+        local zi = utf8sub(zi,i,i)
+        local yb = AuxFilter.zi_to_yin[zi]
+        if yb then
+            len = len + #yb
+        else
+            return 0
+        end
+    end
+    return len
+end
 --- 分支一 原来的功能
 function AuxFilter.main1(input,env)
     env.notifiermark = 1  --辅筛情况下的 选词后的逻辑标记 变为 1
@@ -723,6 +732,10 @@ function AuxFilter.main1(input,env)
     for cand in input:iter() do
         firstcandi = cand
         -- log.info(cand.text,ficompensate)
+        AuxFilter.stindex = ybsplit_indexls(firstcandi.text)
+        if #AuxFilter.stindex==0 then  --不合法的情况。
+            return
+        end
         index = index+1
         --第一个候选词 额外逻辑
         if index==1 then
@@ -734,7 +747,11 @@ function AuxFilter.main1(input,env)
                         firstcandi = value
                     end
                     value._start = cand._start
-                    value._end  = cand._start+2*utf8len(value.text)
+                    local len = len_of_zi(value.text)
+                    if len ==0 then
+                        return
+                    end
+                    value._end  = cand._start+len
                     main_main(env,value)
                 end
                 
@@ -752,6 +769,9 @@ function AuxFilter.main1(input,env)
         -- local inputspls  = splitToPairs(AuxFilter.removetransdInput) --未翻译的音码集合
         local inputspls = split_by_indices(AuxFilter.removetransdInput, AuxFilter.stindex) --未翻译的音码集合
         -- log.info("inputls")
+        for i,v in ipairs(inputspls) do
+            logdic(v)
+        end
         local matchybtab = {} --辅码可以组合的未翻译的音码的集合
         local firstcandtext = firstcandi.text
         -- log.info(auxStr)
