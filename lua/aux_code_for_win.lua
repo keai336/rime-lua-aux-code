@@ -605,7 +605,7 @@ local function transform_preedit(tbl,n)
     for i = 1,n do
         local jp = tbl[i]
         if jp then
-            logdic("jp")
+            -- logdic("jp")
             local rs = AuxFilter.preedit_trans:apply(jp,true)
             result[i] = rs
         end
@@ -615,15 +615,14 @@ end
 
 -- 返回指定长度的候选
 function AuxFilter.yield_candisub(cand)
-    if AuxFilter.counter==0 then
-        if AuxFilter.ficompensate == nil then
-            -- AuxFilter.ficompensate = (cand._end-cand._start)/2
-            AuxFilter.ficompensate = utf8len(cand.text)
-        end
+    if AuxFilter.ficompensate == nil then
+        -- AuxFilter.ficompensate = (cand._end-cand._start)/2
+        AuxFilter.ficompensate = utf8len(cand.text)
+        logdic(cand.text .. AuxFilter.ficompensate)
         AuxFilter.ficompensate = AuxFilter.ficompensate - AuxFilter.leftcompen + AuxFilter.rightcompen
-        if AuxFilter.ficompensate<=0 then
-            AuxFilter.ficompensate = 1
-        end
+    end
+    if AuxFilter.ficompensate<=0 then
+        AuxFilter.ficompensate = 1
     end
     local len = AuxFilter.ficompensate
     if len>utf8len(cand.text) then
@@ -632,7 +631,9 @@ function AuxFilter.yield_candisub(cand)
     local candset = utf8sub(cand.text,1,len)
     -- local _end = AuxFilter.stindex[len]
     local preeditls = split_pinyin(cand.preedit)
+    logdic(str_table(preeditls).."\n"..AuxFilter.leftcompen.."\n"..cand.text.."\n"..candset.."\n".. len .. "\n"..AuxFilter.ficompensate)
     local _end = sum_lengths(preeditls,len)
+    logdic(_end)
     local fiend = cand._start+_end
     if fiend>cand._end then
         fiend = cand._end
@@ -707,9 +708,16 @@ local function combmath(aux,tab)
 return mark
 end
 local function main_main(env,cand)
-    local auxCodes = AuxFilter.aux_code[cand.text] -- 僅單字非 nil
+    local type = cand.type
+    local ftext = cand.text
+
+    if type =="Shadow" or type == "simplified" then
+        ftext = cand:get_genuine().text
+    end
+    local auxCodes = AuxFilter.aux_code[ftext] -- 僅單字非 nil
     -- logdic(cand.text)
-    local fullAuxCodes = AuxFilter.fullAux(env, cand.text)
+    local fullAuxCodes = AuxFilter.fullAux(env, ftext)
+
 
     -- 查看 auxCodes
     -- log.info(cand.text, #auxCodes)
@@ -722,9 +730,11 @@ local function main_main(env,cand)
         local codeComment = table.concat(auxCodes, ',')
         -- 處理 simplifier
         if cand:get_dynamic_type() == "Shadow" then
+            -- logdic("cand:get_dynamic_type()" .. cand.text)
             local shadowText = cand.text
             local shadowComment = cand.comment
             local originalCand = cand:get_genuine()
+            -- logdic("originalCand".. originalCand.text)
             cand = ShadowCandidate(originalCand, originalCand.type, shadowText,
                 originalCand.comment .. shadowComment .. '(' .. codeComment .. ')')
         else
@@ -757,6 +767,19 @@ function len_of_zi(zi)
     end
     return len
 end
+local function best_match(list, key)
+    local best = nil
+    local best_len = 0
+    for _, item in ipairs(list) do
+        if item:sub(1, #key) == key then
+            if #key > best_len then
+                best = item
+                best_len = #key
+            end
+        end
+    end
+    return best
+end
 --- 分支一 原来的功能
 function AuxFilter.main1(input,env)
     env.notifiermark = 1  --辅筛情况下的 选词后的逻辑标记 变为 1
@@ -785,10 +808,15 @@ function AuxFilter.main1(input,env)
     local firstcandi = ""      -- 第一个候选也就是最长的那个
     local index=0  --为了获取第一个候选的判断变量
     for cand in input:iter() do
+
          index = index+1
         --第一个候选词 额外逻辑
         if index==1 then
             firstcandi = cand
+            AuxFilter.ftext = cand.text
+            if cand.type =="Shadow" or cand.type == "simplified" then
+                AuxFilter.ftext= cand:get_genuine().text
+            end
             -- -- logdic("修改")
             -- -- logdic(firstcandtext .. "修改后")
             -- AuxFilter.stindex = ybsplit_indexls(firstcandi.text)
@@ -825,7 +853,6 @@ function AuxFilter.main1(input,env)
 
     -- logdic("before second loop, firstcandtext: " .. (firstcandtext or "NIL"))
     for value in input:iter() do
-
         main_main(env,value)
 
     end
@@ -833,21 +860,20 @@ function AuxFilter.main1(input,env)
     --如果辅筛没筛出来,提示你进行辅断
     if AuxFilter.counter==0 then
         -- local inputspls  = splitToPairs(AuxFilter.removetransdInput) --未翻译的音码集合
-        local inputspls = split_by_indices(AuxFilter.removetransdInput, AuxFilter.stindex) --未翻译的音码集合
+        -- local inputspls = split_by_indices(AuxFilter.removetransdInput, AuxFilter.stindex) --未翻译的音码集合
+        local inputspls =  split_pinyin(firstcandi.preedit)
         -- log.info("inputls")
         -- logdic(str_table(inputspls))
-        for i,v in ipairs(inputspls) do
-            -- logdic(v)
-        end
         local matchybtab = {} --辅码可以组合的未翻译的音码的集合
         -- logdic("wu🐉"..firstcandtext)
         -- log.info(auxStr)
         for index, value in ipairs(inputspls) do
-            -- log.info(index,value)
-            -- logdic("bbb")
-            -- logdic(value)
-            local auxtab = AuxFilter.comb_code[value]
+            local zi = utf8sub(AuxFilter.ftext,index,index)
+            local best_value = best_match(AuxFilter.zi_to_yin[zi],value)
+            local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value]
+
             -- logdic("ccc")
+            -- logdic(str_table(auxtab))
             -- log.info(auxtab)
             if combmath(AuxFilter.auxStr,auxtab) then
                 -- log.info("111")
@@ -889,6 +915,7 @@ function AuxFilter.defaultmain(input,env)
     -- end  
     for cand in input:iter() do
         -- logdic(cand.preedit)
+        -- logdic(cand.type .. "|"..cand.text.."|"..cand.comment)
         yield(cand)
     end
     
@@ -903,6 +930,10 @@ function AuxFilter.longcandimodify(input,env)
     ---获取第一个候选也就是最长的那个,,怎么简单的获取,
     local firstcandi =""
     for cand in input:iter() do
+        AuxFilter.ftext = cand.text
+        if cand.type =="Shadow" or cand.type == "simplified" then
+            AuxFilter.ftext= cand:get_genuine().text
+        end
         firstcandi = cand
         break
     end
@@ -951,14 +982,20 @@ function AuxFilter.longcandimodify(input,env)
     -- log.info("funccode",funccode)
     AuxFilter.leftcompen = countSubstringOccurrences(funccode,"a") --左偏移量
     AuxFilter.rightcompen = countSubstringOccurrences(funccode,"d") + 2 * countSubstringOccurrences(funccode,"f") -- 右偏移量
-    local inputspls = split_by_indices(AuxFilter.removetransdInput, AuxFilter.stindex) --未翻译的音码集合
+    -- local inputspls = split_by_indices(AuxFilter.removetransdInput, AuxFilter.stindex) --未翻译的音码集合
+    local inputspls =  split_pinyin(firstcandi.preedit)
     AuxFilter.ficompensate = utf8len(firstcandi.text) --初始化偏移量  默认在断点尾部
     local passnum = countSubstringOccurrences(AuxFilter.inputCode,AuxFilter.trigger_key) -2  --计算跳过匹配数  功能码中 ; 的作用
     -- log.info(inputspls[1])
     --确定最终断点位置
     local matchedmark = false  --整句辅码是否有有效配对
+    
     for index, value in ipairs(inputspls) do
-        local auxtab = AuxFilter.comb_code[value]
+        local zi = utf8sub(AuxFilter.ftext,index,index)
+        local best_value = best_match(AuxFilter.zi_to_yin[zi],value)
+        local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value]
+        -- logdic(str_table(auxtab))
+
         if combmath(auxcode,auxtab) then
             AuxFilter.ficompensate = index
             matchedmark= true
