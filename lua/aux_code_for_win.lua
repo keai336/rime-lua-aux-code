@@ -22,7 +22,14 @@ else
     log.info("无法打开日志文件")
 end
 end  
-
+-- 获取表的字符串形式
+local function str_table(tbl)
+    local lines = {}
+    for k, v in pairs(tbl) do
+        table.insert(lines, tostring(k) .. "=" .. tostring(v))
+    end
+    return table.concat(lines, "\n")
+end
 -- 获取表的长度 判断表是不是空表
 function table.size(t)
     local s = 0;
@@ -120,7 +127,11 @@ function AuxFilter.init(env)
     AuxFilter.memory = Memory(env.engine, env.engine.schema)
     local defaultuserprefer = {path="ZRM_Aux-code",showor="true",trigger=";",matchmode="s",yun="on"}
     local keys = {"path", "showor","trigger", "matchmode","yun"}
-    local userprefer = string.gmatch(env.name_space,"([^@]+)")
+    local preedit_config = env.engine.schema.config:get_list("translator/preedit_format1")
+    -- logdic(str_table(preedit_config))
+    AuxFilter.preedit_trans = Projection()
+    AuxFilter.preedit_trans:load(preedit_config)
+    local userprefer = string.gmatch(env.name_space,"([^@]+)") or ""
     local counter0 = 0
     for item in userprefer do
         counter0 = counter0+1
@@ -219,6 +230,7 @@ function AuxFilter.main1_notifier(ctx)
         -- log.info('select_notifier', ctx.input, removeAuxInput, preedit.text, reeditTextFront)
 
         -- 當最終不含有任何字母時 (候選)，就跳出分割模式，並把輔助碼分隔符刪掉
+        AuxFilter.Update_codes(ctx)
         ctx.input = AuxFilter.removeAuxInput
         AuxFilter.ybtrans() 
         if AuxFilter.removetransdInput ~= "" then
@@ -316,13 +328,7 @@ local function table_keys(t)
     end
     return keys
 end
-local function str_table(tbl)
-    local lines = {}
-    for k, v in pairs(tbl) do
-        table.insert(lines, tostring(k) .. "=" .. tostring(v))
-    end
-    return table.concat(lines, "\n")
-end
+
 ----------------
 ----------------
 -- 閱讀輔碼文件 --
@@ -582,6 +588,31 @@ local function ybsplit_indexls(candset)
     end
     return stindex
 end
+--计算 制定长度切片元素的长度和
+local function sum_lengths(slice, n)
+    local total = 0
+    for i = 1, n do
+        local str = slice[i]
+        if str then
+            total = total + #str
+        end
+    end
+    return total
+end
+
+local function transform_preedit(tbl,n)
+    local result = {}
+    for i = 1,n do
+        local jp = tbl[i]
+        if jp then
+            logdic("jp")
+            local rs = AuxFilter.preedit_trans:apply(jp,true)
+            result[i] = rs
+        end
+    end
+    return result
+end 
+
 -- 返回指定长度的候选
 function AuxFilter.yield_candisub(cand)
     if AuxFilter.counter==0 then
@@ -599,25 +630,26 @@ function AuxFilter.yield_candisub(cand)
         len = utf8len(cand.text)
     end
     local candset = utf8sub(cand.text,1,len)
-    local _end = AuxFilter.stindex[len]
+    -- local _end = AuxFilter.stindex[len]
+    local preeditls = split_pinyin(cand.preedit)
+    local _end = sum_lengths(preeditls,len)
     local fiend = cand._start+_end
     if fiend>cand._end then
         fiend = cand._end
     end
-    local preeditls = split_pinyin(cand.preedit)
     local finalcandi = Candidate(cand.type,cand._start,fiend,candset,cand.comment)
-    local finalpreedit = table.concat(slice(preeditls,1,len)," ") -- 计算新的拼音预编辑
+    local finalpreedit = table.concat(transform_preedit(preeditls,len), " ")
     finalcandi.preedit = finalpreedit -- 设置新的拼音预编辑
     if (AuxFilter.yieldset[finalcandi.text]~=nil)then
         return    
     end
     AuxFilter.last_fist_commit = AuxFilter.last_fist_commit or {}
     if #AuxFilter.auxStr == 1 then
-        if AuxFilter.last_fist_commit[1] == finalcandi.text then
+        if AuxFilter.last_fist_commit[1] == cand.text then
             return
         end
     elseif #AuxFilter.auxStr == 2 then
-        if AuxFilter.last_fist_commit[1] == finalcandi.text or AuxFilter.last_fist_commit[2] == finalcandi.text then
+        if AuxFilter.last_fist_commit[1] == cand.text or AuxFilter.last_fist_commit[2] == cand.text then
             return
         end
     end
@@ -757,14 +789,15 @@ function AuxFilter.main1(input,env)
         --第一个候选词 额外逻辑
         if index==1 then
             firstcandi = cand
-            -- logdic("修改")
-            -- logdic(firstcandtext .. "修改后")
-            AuxFilter.stindex = ybsplit_indexls(firstcandi.text)
-            logdic(str_table(AuxFilter.stindex))
-            if #AuxFilter.stindex==0 then  --不合法的情况。
-                logdic("不合法的情况")
-                return
-            end
+            -- -- logdic("修改")
+            -- -- logdic(firstcandtext .. "修改后")
+            -- AuxFilter.stindex = ybsplit_indexls(firstcandi.text)
+            -- logdic(str_table(AuxFilter.stindex))
+            -- if #AuxFilter.stindex==0 then  --不合法的情况。
+            --     logdic("不合法的情况")
+            --     return
+            -- end
+            AuxFilter.firstcand_ybls = split_pinyin(cand.preedit)
             if #(AuxFilter.firstcandipre)~=0 then
                 local i = 0
                 for _, value in ipairs(AuxFilter.firstcandipre) do
@@ -1099,17 +1132,8 @@ function AuxFilter.ybtrans()
     end
 end
 -- 使用示例
-
-function AuxFilter.func(input, env) 
-    env.notifiermark = -1
-    AuxFilter.firstcandipre = {}
-    AuxFilter.yieldset = {}
-    AuxFilter.leftcompen = 0
-    AuxFilter.rightcompen = 0
-    AuxFilter.skipc = 0
-    AuxFilter.ficompensate = nil
-    AuxFilter.counter = 0
-    local context = env.engine.context
+function AuxFilter.Update_codes(ctx)
+    local context = ctx
     --- 预处理输入码
     AuxFilter.inputCode = context.input --输入码
     -- log.info("输入码",AuxFilter.inputCode)
@@ -1127,6 +1151,19 @@ function AuxFilter.func(input, env)
     AuxFilter.transdcodei = string.gsub(AuxFilter.removeAuxInput,AuxFilter.removetransdInput,"")  --已翻译字母部分
 
     -- log.info("已翻译的字母",AuxFilter.transdcodei)
+end
+
+function AuxFilter.func(input, env) 
+    env.notifiermark = -1
+    AuxFilter.firstcandipre = {}
+    AuxFilter.yieldset = {}
+    AuxFilter.leftcompen = 0
+    AuxFilter.rightcompen = 0
+    AuxFilter.skipc = 0
+    AuxFilter.ficompensate = nil
+    AuxFilter.counter = 0
+    local ctx = env.engine.context
+    AuxFilter.Update_codes(ctx)
     -- 云词处理
     if AuxFilter.yun_or then
         AuxFilter.ybtrans()
@@ -1142,6 +1179,7 @@ function AuxFilter.func(input, env)
         -- log.info("进入分支1",AuxFilter.inputCode)
         AuxFilter.main1(input,env)
     elseif string.match(AuxFilter.inputCode,pattern_long) then
+        AuxFilter.last_fist_commit = nil
         AuxFilter.longcandimodify(input,env) 
         -- log.info("进入分支2",AuxFilter.inputCode)    
     elseif string.match(AuxFilter.inputCode,pattern_singlechar) then
