@@ -612,49 +612,61 @@ local function transform_preedit(tbl,n)
     end
     return result
 end 
+-- 定义一个候选类
+local candisub= {}
+candisub.__index = candisub
 
+-- 构造函数
+function candisub:new(cand,s_len)
+    local self = setmetatable({}, candisub)
+    self.cand = cand
+    self.type = cand.type
+    self.ftext = cand.text
+    if self.type =="Shadow" or self.type == "simplified" then
+        self.ftext = cand:get_genuine().text
+    end
+    local preeditls = split_pinyin(cand.preedit)
+    local rlen = #preeditls
+    local zlen = utf8len(cand.text)
+    local slen = s_len or zlen
+    local len = slen
+    if rlen == zlen then
+        local ficompensate =  AuxFilter.rightcompen - AuxFilter.leftcompen
+        if ficompensate>0 then
+           ficompensate = 0
+        end
+        -- logdic("222" .. ficompensate)
+        if ficompensate~=0 or s_len ~=nil then
+            if s_len then
+               AuxFilter.firstcand_len = s_len
+            end
+            local prelen = AuxFilter.firstcand_len + ficompensate
+            if prelen<rlen then
+                len = prelen
+                if len<1 then
+                    len = 1
+                end
+                local textsub = utf8sub(cand.text,1,len)
+                local fend = sum_lengths(preeditls,len)
+                fend = cand._start + fend
+                self.cand = Candidate(cand.type,cand._start,fend,textsub,cand.comment)
+                self.cand.preedit = table.concat(transform_preedit(preeditls,len), " ")
+                return self
+            end
+
+        end
+    else 
+    end
+    self.cand.preedit = table.concat(transform_preedit(preeditls,rlen), " ")
+    -- logdic("raw")
+    return self
+end
 -- 返回指定长度的候选
 function AuxFilter.yield_candisub(cand)
-    local type = cand.type
-    local ftext = cand.text
-    if type =="Shadow" or type == "simplified" then
-        ftext = cand:get_genuine().text
-    end
-    local mark_longcandi_branch = false
-    
-    if AuxFilter.ficompensate == nil then
-        -- AuxFilter.ficompensate = (cand._end-cand._start)/2
-        AuxFilter.ficompensate = utf8len(ftext)
-        -- logdic(cand.text .. AuxFilter.ficompensate)
-        AuxFilter.ficompensate = AuxFilter.ficompensate - AuxFilter.leftcompen + AuxFilter.rightcompen
-    end
-    if AuxFilter.ficompensate<=0 then
-        AuxFilter.ficompensate = 1
-    end
-    local len = AuxFilter.ficompensate
-    if len>utf8len(ftext) then
-        len = utf8len(ftext)
-    end
-    local candset = utf8sub(cand.text,1,len)
-    if utf8len(ftext) ~= utf8len(cand.text) then
-        candset = cand.text
-        len = utf8len(ftext)
-    end
-    -- local _end = AuxFilter.stindex[len]
-    local preeditls = split_pinyin(cand.preedit)
-    -- logdic(str_table(preeditls).."\n"..AuxFilter.leftcompen.."\n"..cand.text.."\n"..candset.."\n".. len .. "\n"..AuxFilter.ficompensate)
-    local _end = sum_lengths(preeditls,len)
-    -- logdic(_end)
-    local fiend = cand._start+_end
-    if fiend>cand._end then
-        fiend = cand._end
-    end
-    local finalcandi = Candidate(cand.type,cand._start,fiend,candset,cand.comment)
-    local finalpreedit = table.concat(transform_preedit(preeditls,len), " ")
-
-    finalcandi.preedit = finalpreedit -- 设置新的拼音预编辑
+    local finalcandi = cand
+    logdic(cand.cand.text)
     -- logdic("finalcandi"..finalcandi.text .. AuxFilter.inputCode .. finalcandi.type)
-    if (AuxFilter.yieldset[finalcandi.text]~=nil)then
+    if (AuxFilter.yieldset[finalcandi.cand.text]~=nil)then
         -- logdic("skip 重复"..finalcandi.text)
         return    
     end
@@ -662,35 +674,35 @@ function AuxFilter.yield_candisub(cand)
     AuxFilter.counter = AuxFilter.counter or 0
     if AuxFilter.counter == 0 then
         if #AuxFilter.auxStr == 1 then
-            if AuxFilter.last_fist_commit[1] == finalcandi.text then
+            if AuxFilter.last_fist_commit[1] == finalcandi.cand.text then
                 -- logdic("skip1"..finalcandi.text.."=="..AuxFilter.last_fist_commit[1])
                 return
             end
         elseif #AuxFilter.auxStr == 2 then
-            if AuxFilter.last_fist_commit[1] == finalcandi.text or AuxFilter.last_fist_commit[2] == finalcandi.text then
+            if AuxFilter.last_fist_commit[1] == finalcandi.cand.text or AuxFilter.last_fist_commit[2] == finalcandi.cand.text then
                 -- logdic("skip2"..finalcandi.text.."=="..AuxFilter.last_fist_commit[1].."=="..AuxFilter.last_fist_commit[2])
                 return
             end
         end
     end
 
-    AuxFilter.yieldset[finalcandi.text] = true
+    AuxFilter.yieldset[finalcandi.cand.text] = true
     if AuxFilter.skipc<=0 then
-        
         AuxFilter.counter = AuxFilter.counter+1
         if AuxFilter.counter == 1 then
+            AuxFilter.firstcand_len = utf8len(finalcandi.cand.text)
             if #AuxFilter.auxStr == 0 then
-                AuxFilter.last_fist_commit[1] = finalcandi.text
+                AuxFilter.last_fist_commit[1] = finalcandi.cand.text
                 -- logdic("write1" .. finalcandi.text)
             elseif #AuxFilter.auxStr == 1 then
-                AuxFilter.last_fist_commit[2] = finalcandi.text
+                AuxFilter.last_fist_commit[2] = finalcandi.cand.text
                 -- logdic("write1" .. finalcandi.text)
             end
         else
             -- logdic("no1"..finalcandi.text)
         end
     
-        yield(finalcandi)
+        yield(finalcandi.cand)
     else
         AuxFilter.skipc=AuxFilter.skipc-1
         -- logdic("skip by wipe"..finalcandi.text)
@@ -767,6 +779,7 @@ local function main_main(env,cand)
             cand.comment = '(' .. codeComment .. ')'
         end
     end
+    local cand = candisub:new(cand)
     -- 過濾輔助碼
     if #(AuxFilter.auxStr) == 0 then
         -- 沒有輔助碼、不需篩選，直接返回待選項
@@ -834,7 +847,6 @@ function AuxFilter.main1(input,env)
     local firstcandi = ""      -- 第一个候选也就是最长的那个
     local index=0  --为了获取第一个候选的判断变量
     for cand in input:iter() do
-
          index = index+1
         --第一个候选词 额外逻辑
         if index==1 then
@@ -1054,7 +1066,10 @@ function AuxFilter.longcandimodify(input,env)
     --在断点处断句逻辑
     elseif branchmark==1 then
         local comment = ""
-        AuxFilter.yield_candisub(firstcandi)
+        logdic("断句"..firstcandi.text .. AuxFilter.ficompensate)
+        local finalcandi = candisub:new(firstcandi,AuxFilter.ficompensate)
+        logdic("断句"..finalcandi.cand.text)
+        AuxFilter.yield_candisub(finalcandi)
     end
     if not matchedmark then
         comment = "辅码无匹配"
