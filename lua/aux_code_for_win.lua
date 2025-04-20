@@ -629,9 +629,13 @@ function candisub:new(cand,s_len)
     self.ftext = cand.text
     self.line = false
     local rawflag = true
+    local preedit_flag = true
     if cand:get_dynamic_type() == "Shadow" then
         self.ftext = cand:get_genuine().text
         rawflag = false
+    end
+    if cand.type =="completion" or cand.type:find("table") then
+        preedit_flag = false
     end
     local preeditls = split_pinyin(cand.preedit)
     local rlen = #preeditls
@@ -662,10 +666,14 @@ function candisub:new(cand,s_len)
                 local fend = sum_lengths(preeditls,len)
                 fend = cand._start + fend
                 self.cand = Candidate(cand.type,cand._start,fend,textsub,cand.comment)
+                local preedit = table.concat(slice(preeditls,1,len), " ")
+                if preedit_flag then
+                    preedit = table.concat(transform_preedit(preeditls,len), " ")
+                end
                 if rawflag then
-                    self.cand.preedit = table.concat(transform_preedit(preeditls,len), " ")
+                    self.cand.preedit = preedit
                 else
-                    self.cand:get_genuine().preedit = table.concat(transform_preedit(preeditls,len), " ")
+                    self.cand:get_genuine().preedit = preedit
                 end
                 return self
             end
@@ -674,10 +682,14 @@ function candisub:new(cand,s_len)
     else 
     end
     self.cand = Candidate(cand.type,cand._start,cand._end,cand.text,cand.comment)
+    local preedit = table.concat(slice(preeditls,1,rlen), " ")
+    if preedit_flag then
+        preedit = table.concat(transform_preedit(preeditls,rlen), " ")
+    end
     if rawflag then
-        self.cand.preedit = table.concat(transform_preedit(preeditls,rlen), " ")
+        self.cand.preedit = preedit
     else
-        self.cand:get_genuine().preedit = table.concat(transform_preedit(preeditls,rlen), " ")
+        self.cand:get_genuine().preedit =preedit
     end
     return self
 end
@@ -709,22 +721,25 @@ function AuxFilter.yield_candisub(cand)
         end
     end
     -- logdic("ccc")
-    AuxFilter.yieldset[finalcandi.cand.text] = true
+    if AuxFilter.turned~=true then
+        AuxFilter.yieldset[finalcandi.cand.text] = true
+    end
     if AuxFilter.skipc<=0 then
         AuxFilter.counter = AuxFilter.counter+1
         if AuxFilter.counter == 1 then
             AuxFilter.firstcand_len = utf8len(finalcandi.cand.text)
             if #AuxFilter.auxStr == 0 then
                 AuxFilter.last_fist_commit[1] = finalcandi.cand.text
-                -- logdic("write1" .. finalcandi.text)
+                -- logdic("write1" .. finalcandi.cand.text)
             elseif #AuxFilter.auxStr == 1 then
                 AuxFilter.last_fist_commit[2] = finalcandi.cand.text
-                -- logdic("write1" .. finalcandi.text)
+                -- logdic("write2" .. finalcandi.cand.text)
             end
         else
             -- logdic("no1"..finalcandi.text)
         end
-    
+        local cand = finalcandi.cand
+        -- logdic("yield 😄"..AuxFilter.inputCode .. "|"..cand.type .. "|"..cand.text.."|"..cand.comment.."|"..cand.preedit)
         yield(finalcandi.cand)
     else
         AuxFilter.skipc=AuxFilter.skipc-1
@@ -828,6 +843,7 @@ local function best_match(list, key)
 end
 --- 分支一 原来的功能
 function AuxFilter.main1(input,env)
+    -- logdic("main1")
     env.notifiermark = 1  --辅筛情况下的 选词后的逻辑标记 变为 1
     -- 分割部分正式開始
     AuxFilter.auxStr = ""
@@ -854,6 +870,7 @@ function AuxFilter.main1(input,env)
     local firstcandi = ""      -- 第一个候选也就是最长的那个
     local index=0  --为了获取第一个候选的判断变量
     for cand in input:iter() do
+        -- logdic("如如如如"..AuxFilter.inputCode .. "|"..cand.type .. "|"..cand.text.."|"..cand.comment.."|"..cand.preedit)
         if (AuxFilter.single_flag  and #split_pinyin(cand.preedit) == 1) or (not AuxFilter.single_flag) then
             index = index+1
             --第一个候选词 额外逻辑
@@ -895,8 +912,13 @@ function AuxFilter.main1(input,env)
 
     -- logdic("before second loop, firstcandtext: " .. (firstcandtext or "NIL"))
     for value in input:iter() do
+        -- logdic("如如如如"..AuxFilter.inputCode .. "|"..value.type .. "|"..value.text.."|"..value.comment.."|"..value.preedit)
+
         main_main(env,value)
 
+    end
+    if AuxFilter.turned==true then
+        AuxFilter.turned = false
     end
     -- logdic("after second loop, firstcandtext: " .. (firstcandtext or "NIL"))
     --如果辅筛没筛出来,提示你进行辅断
@@ -913,7 +935,7 @@ function AuxFilter.main1(input,env)
         local firstcandi = candisub:new(firstcandi)
         if firstcandi.line then
             for index, value in ipairs(inputspls) do
-                logdic(firstcandi.ftext)
+                -- logdic(firstcandi.ftext)
                 local zi = utf8sub(firstcandi.ftext,index,index)
                 local best_value = best_match(AuxFilter.zi_to_yin[zi],value)
                 local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value]
@@ -964,9 +986,13 @@ function AuxFilter.defaultmain(input,env)
     -- end  
     for cand in input:iter() do
         -- logdic(cand.preedit)
-        -- logdic(cand.type .. "|"..cand.text.."|"..cand.comment.."|"..cand.preedit)
+
+        -- logdic(AuxFilter.inputCode .. "|"..cand.type .. "|"..cand.text.."|"..cand.comment.."|"..cand.preedit)
         local preeditls = split_pinyin(cand.preedit)
         local preedit =  table.concat(transform_preedit(preeditls,#preeditls), " ")
+        if cand.type =="completion" or cand.type:find("table") then
+            preedit =  table.concat(slice(preeditls,1,#preeditls), " ")
+        end
         if cand.type =="Shadow" or cand.type == "simplified" then
             local rawcand = cand:get_genuine()
             rawcand.preedit = preedit
@@ -1258,12 +1284,14 @@ local function switch_single_char(ctx)
     elseif AuxFilter.single_flag == false then
         AuxFilter.single_flag = true
     end
+    AuxFilter.turned = true
     ctx.input = ctx.input:gsub("`","")
     AuxFilter.Update_codes(ctx)
     -- logdic(AuxFilter.inputCode)
 end
 function AuxFilter.func(input, env) 
     -- log.info("输入码",AuxFilter.inputCode)
+    -- logdic("出發")
     env.notifiermark = -1
     AuxFilter.firstcandipre = {}
     AuxFilter.yieldset = {}
@@ -1289,6 +1317,8 @@ function AuxFilter.func(input, env)
     local pattern_singlechar_switch = "^%a+" .. AuxFilter.trigger_key_pattern .."`"..'%a*$'  -- 单字输入分支
 -- 
     if string.match(AuxFilter.inputCode,pattern_main1)then
+        -- log.info("进入分支1",AuxFilter.inputCode)
+        -- AuxFilter.main1(input,env)
         local composition = env.engine.context.composition
         if(not composition:empty()) then
             local segment = composition:back()
