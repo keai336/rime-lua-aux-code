@@ -622,14 +622,16 @@ candisub.__index = candisub
 
 -- 构造函数
 function candisub:new(cand,s_len)
-    logdic(cand.text .."|"..cand:get_dynamic_type())
+    -- logdic(cand.text .."|"..cand:get_dynamic_type())
     local self = setmetatable({}, candisub)
     self.cand = cand
     self.type = cand.type
     self.ftext = cand.text
     self.line = false
+    local rawflag = true
     if cand:get_dynamic_type() == "Shadow" then
         self.ftext = cand:get_genuine().text
+        rawflag = false
     end
     local preeditls = split_pinyin(cand.preedit)
     local rlen = #preeditls
@@ -637,7 +639,7 @@ function candisub:new(cand,s_len)
     local slen = s_len or zlen
     local len = slen
     if rlen == zlen then
-        slef.line = false
+        self.line = true
         local ficompensate =  AuxFilter.rightcompen - AuxFilter.leftcompen
         if ficompensate>0 then
            ficompensate = 0
@@ -648,8 +650,10 @@ function candisub:new(cand,s_len)
                AuxFilter.firstcand_len = s_len
                AuxFilter.last_fist_commit = {}
             end
-            local prelen = AuxFilter.firstcand_len + ficompensate
-            if prelen<rlen then
+            -- local prelen = AuxFilter.firstcand_len or
+            AuxFilter.prelen = AuxFilter.prelen or AuxFilter.firstcand_len + ficompensate
+            local prelen = AuxFilter.prelen
+            if prelen<=rlen then
                 len = prelen
                 if len<1 then
                     len = 1
@@ -658,7 +662,11 @@ function candisub:new(cand,s_len)
                 local fend = sum_lengths(preeditls,len)
                 fend = cand._start + fend
                 self.cand = Candidate(cand.type,cand._start,fend,textsub,cand.comment)
-                self.cand.preedit = table.concat(transform_preedit(preeditls,len), " ")
+                if rawflag then
+                    self.cand.preedit = table.concat(transform_preedit(preeditls,len), " ")
+                else
+                    self.cand:get_genuine().preedit = table.concat(transform_preedit(preeditls,len), " ")
+                end
                 return self
             end
 
@@ -666,8 +674,11 @@ function candisub:new(cand,s_len)
     else 
     end
     self.cand = Candidate(cand.type,cand._start,cand._end,cand.text,cand.comment)
-    self.cand.preedit = table.concat(transform_preedit(preeditls,rlen), " ")
-    -- logdic("raw")
+    if rawflag then
+        self.cand.preedit = table.concat(transform_preedit(preeditls,rlen), " ")
+    else
+        self.cand:get_genuine().preedit = table.concat(transform_preedit(preeditls,rlen), " ")
+    end
     return self
 end
 -- 返回指定长度的候选
@@ -680,10 +691,13 @@ function AuxFilter.yield_candisub(cand)
         return    
     end
     AuxFilter.last_fist_commit = AuxFilter.last_fist_commit or {}
+    -- logdic("aaa")
     AuxFilter.counter = AuxFilter.counter or 0
+    AuxFilter.auxStr = AuxFilter.auxStr or ""
     if AuxFilter.counter == 0 then
         if #AuxFilter.auxStr == 1 then
             if AuxFilter.last_fist_commit[1] == finalcandi.cand.text then
+                -- logdic("bbb")
                 -- logdic("skip1"..finalcandi.text.."=="..AuxFilter.last_fist_commit[1])
                 return
             end
@@ -694,7 +708,7 @@ function AuxFilter.yield_candisub(cand)
             end
         end
     end
-
+    -- logdic("ccc")
     AuxFilter.yieldset[finalcandi.cand.text] = true
     if AuxFilter.skipc<=0 then
         AuxFilter.counter = AuxFilter.counter+1
@@ -768,22 +782,11 @@ local function main_main(env,cand)
     --     log.info(i, table.concat(cl, ',', 1, #cl))
     -- end
 
-    -- -- 給待選項加上輔助碼提示
-    -- if AuxFilter.show_aux_notice and auxCodes and #auxCodes > 0 then
-    --     local codeComment = table.concat(auxCodes, ',')
-    --     -- 處理 simplifier
-    --     if cand:get_dynamic_type() == "Shadow" then
-    --         -- logdic("cand:get_dynamic_type()" .. cand.text)
-    --         local shadowText = cand.text
-    --         local shadowComment = cand.comment
-    --         local originalCand = cand:get_genuine()
-    --         -- logdic("originalCand".. originalCand.text)
-    --         cand = ShadowCandidate(originalCand, originalCand.type, shadowText,
-    --             originalCand.comment .. shadowComment .. '(' .. codeComment .. ')')
-    --     else
-    --         cand.comment = '(' .. codeComment .. ')'
-    --     end
-    -- end
+    -- 給待選項加上輔助碼提示
+    if AuxFilter.show_aux_notice and auxCodes and #auxCodes > 0 then
+        local codeComment = table.concat(auxCodes, ',')
+        cand.cand.comment = cand.cand.comment .. '(' .. codeComment .. ')'
+    end
     -- 過濾輔助碼
     if #(AuxFilter.auxStr) == 0 then
         -- 沒有輔助碼、不需篩選，直接返回待選項
@@ -851,38 +854,40 @@ function AuxFilter.main1(input,env)
     local firstcandi = ""      -- 第一个候选也就是最长的那个
     local index=0  --为了获取第一个候选的判断变量
     for cand in input:iter() do
-         index = index+1
-        --第一个候选词 额外逻辑
-        if index==1 then
-            firstcandi = cand
-            -- -- logdic("修改")
-            -- -- logdic(firstcandtext .. "修改后")
-            -- AuxFilter.stindex = ybsplit_indexls(firstcandi.text)
-            -- logdic(str_table(AuxFilter.stindex))
-            -- if #AuxFilter.stindex==0 then  --不合法的情况。
-            --     logdic("不合法的情况")
-            --     return
-            -- end
-            if #(AuxFilter.firstcandipre)~=0 then
-                local i = 0
-                for _, value in ipairs(AuxFilter.firstcandipre) do
-                    i = i+1
-                    if i==1 then
-                        firstcandi = value
+        if (AuxFilter.single_flag  and #split_pinyin(cand.preedit) == 1) or (not AuxFilter.single_flag) then
+            index = index+1
+            --第一个候选词 额外逻辑
+            if index==1 then
+                firstcandi = cand
+                -- -- logdic("修改")
+                -- -- logdic(firstcandtext .. "修改后")
+                -- AuxFilter.stindex = ybsplit_indexls(firstcandi.text)
+                -- logdic(str_table(AuxFilter.stindex))
+                -- if #AuxFilter.stindex==0 then  --不合法的情况。
+                --     logdic("不合法的情况")
+                --     return
+                -- end
+                if #(AuxFilter.firstcandipre)~=0 then
+                    local i = 0
+                    for _, value in ipairs(AuxFilter.firstcandipre) do
+                        i = i+1
+                        if i==1 then
+                            firstcandi = value
+                        end
+                        value._start = cand._start
+                        local len = len_of_zi(value.text)
+                        if len ==0 then
+                            return
+                        end
+                        value._end  = cand._start+len
+                        main_main(env,value)
                     end
-                    value._start = cand._start
-                    local len = len_of_zi(value.text)
-                    if len ==0 then
-                        return
-                    end
-                    value._end  = cand._start+len
-                    main_main(env,value)
+                    
                 end
-                
+                main_main(env,cand)   
+                -- logdic("After break, firstcandtext: " .. (firstcandtext or "NIL"))
+                break
             end
-            main_main(env,cand)   
-            -- logdic("After break, firstcandtext: " .. (firstcandtext or "NIL"))
-            break
 
         end
 
@@ -959,11 +964,19 @@ function AuxFilter.defaultmain(input,env)
     -- end  
     for cand in input:iter() do
         -- logdic(cand.preedit)
-        -- logdic(cand.type .. "|"..cand.text.."|"..cand.comment)
+        -- logdic(cand.type .. "|"..cand.text.."|"..cand.comment.."|"..cand.preedit)
         local preeditls = split_pinyin(cand.preedit)
         local preedit =  table.concat(transform_preedit(preeditls,#preeditls), " ")
-        cand.preedit = preedit
+        if cand.type =="Shadow" or cand.type == "simplified" then
+            local rawcand = cand:get_genuine()
+            rawcand.preedit = preedit
+        else
+            cand.preedit = preedit
+        end
         yield(cand)
+        -- cand = candisub:new(cand)
+        -- logdic("iggs")
+        -- AuxFilter.yield_candisub(cand)
     end
     
 end
@@ -1239,8 +1252,18 @@ function AuxFilter.Update_codes(ctx)
 
     -- log.info("已翻译的字母",AuxFilter.transdcodei)
 end
-
+local function switch_single_char(ctx)
+    if AuxFilter.single_flag == true then
+        AuxFilter.single_flag = false
+    elseif AuxFilter.single_flag == false then
+        AuxFilter.single_flag = true
+    end
+    ctx.input = ctx.input:gsub("`","")
+    AuxFilter.Update_codes(ctx)
+    -- logdic(AuxFilter.inputCode)
+end
 function AuxFilter.func(input, env) 
+    -- log.info("输入码",AuxFilter.inputCode)
     env.notifiermark = -1
     AuxFilter.firstcandipre = {}
     AuxFilter.yieldset = {}
@@ -1249,6 +1272,8 @@ function AuxFilter.func(input, env)
     AuxFilter.skipc = 0
     AuxFilter.ficompensate = nil
     AuxFilter.counter = 0
+    AuxFilter.prelen = nil
+    AuxFilter.single_flag = AuxFilter.single_flag or false
     local ctx = env.engine.context
     AuxFilter.Update_codes(ctx)
     -- 云词处理
@@ -1260,17 +1285,28 @@ function AuxFilter.func(input, env)
     -- 分流
     local pattern_main1 = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*$'  --辅筛分支的正则
     local pattern_long = "^%a+" ..AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .."+%a*$" --长句修改分支的正则
-    local pattern_singlechar = "^" .. AuxFilter.trigger_key_pattern .. "%a%a%a?%a?$"  -- 单字输入分支
-    local pattern_odds_char = ""
+    -- local pattern_singlechar = "^" .. AuxFilter.trigger_key_pattern .. "%a%a%a?%a?$"  -- 单字输入分支
+    local pattern_singlechar_switch = "^%a+" .. AuxFilter.trigger_key_pattern .."`"..'%a*$'  -- 单字输入分支
+-- 
     if string.match(AuxFilter.inputCode,pattern_main1)then
+        local composition = env.engine.context.composition
+        if(not composition:empty()) then
+            local segment = composition:back()
+            if AuxFilter.single_flag then 
+                segment.prompt = "单字筛选分支"
+            end
+        end
         -- log.info("进入分支1",AuxFilter.inputCode)
         AuxFilter.main1(input,env)
     elseif string.match(AuxFilter.inputCode,pattern_long) then
         AuxFilter.last_fist_commit = nil
         AuxFilter.longcandimodify(input,env) 
         -- log.info("进入分支2",AuxFilter.inputCode)    
-    elseif string.match(AuxFilter.inputCode,pattern_singlechar) then
-        AuxFilter.singlechar(input,env)
+    elseif string.match(AuxFilter.inputCode,pattern_singlechar_switch) then
+        -- logdic("进入分支3",AuxFilter.inputCode)
+        switch_single_char(env.engine.context)
+        AuxFilter.main1(input,env)
+        -- env.engine.context.input = "aa"
         -- log.info("进入分支3",AuxFilter.inputCode)
     --都不匹配直接返回的分支
     else
