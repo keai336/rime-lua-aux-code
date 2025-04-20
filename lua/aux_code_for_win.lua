@@ -1,11 +1,6 @@
 local AuxFilter = {}
-local log = require ('log')
-local http = require("simplehttp")
-log.outfile = "a.txt"
-http.TIMEOUT = 0.2
 -- 定义记忆词典路径   用辅码选词用户词典没有记忆,只能在这里统计,然后后续处理.不知道怎么直接操作用户词典
 local logFilePath = rime_api.get_user_data_dir() .. "/dic.log"
-
 -- 打开文件以追加模式写入
 local dicfile = io.open(logFilePath, "a")
 local function logdic(message)
@@ -121,29 +116,23 @@ local function utf8sub(str, i, j)
     return string.sub(str, startIndex, endIndex)
 end
 function AuxFilter.init(env)
-    -- log.info("ini",111)
-    -- log.info("** AuxCode filter", env.name_space)
     local engine = env.engine
     AuxFilter.memory = Memory(env.engine, env.engine.schema)
-    local defaultuserprefer = {path="ZRM_Aux-code",showor="true",trigger=";",matchmode="s",yun="on"}
-    local keys = {"path", "showor","trigger", "matchmode","yun"}
-    local preedit_config = env.engine.schema.config:get_list("translator/preedit_format1")
-    -- logdic(str_table(preedit_config))
-    AuxFilter.preedit_trans = Projection()
-    AuxFilter.preedit_trans:load(preedit_config)
+    local defaultuserprefer = {path="ZRM_Aux-code",showor="true",trigger=";",matchmode="s"}
+    local keys = {"path", "showor","trigger", "matchmode"}
     local userprefer = string.gmatch(env.name_space,"([^@]+)") or ""
     local counter0 = 0
     for item in userprefer do
         counter0 = counter0+1
         -- log.info(item)
         if item then
+            if keys[counter0] == nil then
+                break
+            end
             defaultuserprefer[keys[counter0]] = item
         end
     end
     -- log.info(defaultuserprefer)
-    if AuxFilter.aux_code == nil then
-        AuxFilter.readAuxTxt(defaultuserprefer["path"])
-    end
      --设置匹配模式 0宽松匹配和1严格匹配  默认严格 l为宽松
     if defaultuserprefer["matchmode"] == "s" then
         AuxFilter.matchmode=1
@@ -163,12 +152,25 @@ function AuxFilter.init(env)
     else
         AuxFilter.show_aux_notice = true
     end
-    AuxFilter.yun_or = defaultuserprefer["yun"]
-    if AuxFilter.yun_or == "on" then
-        AuxFilter.yun_or = true
-    else
-        AuxFilter.yun_or = false
+    logdic("基礎配置加載成功")
+    -- hook  preedit_format
+    local preedit_config = env.engine.schema.config:get_list("translator/preedit_format1")
+    -- logdic(str_table(preedit_config))
+    if preedit_config~=nil then
+        logdic("preedit_config")
+        AuxFilter.preedit_trans = Projection()
+        logdic("load")
+        AuxFilter.preedit_trans:load(preedit_config)
+        logdic("load 成功")
+    else 
+        AuxFilter.preedit_trans = nil
     end
+    logdic("hook 成功")
+    if AuxFilter.aux_code == nil then
+        AuxFilter.readAuxTxt(defaultuserprefer["path"])
+        logdic("readAuxTxt 成功")
+    end
+    -- 加載輔助碼文件
     -- 不同模式不同处理逻辑
 
     env.notifier = engine.context.select_notifier:connect(function(ctx)
@@ -190,22 +192,6 @@ function AuxFilter.init(env)
     -- end
     end)
 end
-local xn_sp2qp_table = {["aa"]="a",["ai"]="ai",["an"]="an",["ah"]="ang",["ao"]="ao",["ba"]="ba",["bd"]="bai",["bj"]="ban",["bh"]="bang",["bc"]="bao",["bw"]="bei",["bf"]="ben",["bg"]="beng",["bi"]="bi",["bx"]="bia",["bm"]="bian",["bl"]="biang",["bn"]="biao",["bp"]="bie",["bb"]="bin",["bk"]="bing",["bo"]="bo",["bu"]="bu",["ca"]="ca",["cd"]="cai",["cj"]="can",["ch"]="cang",["cc"]="cao",["ce"]="ce",["cw"]="cei",["cf"]="cen",["cg"]="ceng",["ia"]="cha",["id"]="chai",["ij"]="chan",["ih"]="chang",["ic"]="chao",["ie"]="che",["if"]="chen",["ig"]="cheng",["ii"]="chi",["is"]="chong",["iz"]="chou",["iu"]="chu",["ix"]="chua",["ik"]="chuai",["ir"]="chuan",["il"]="chuang",["iv"]="chui",["iy"]="chun",["io"]="chuo",["ci"]="ci",["cs"]="cong",["cz"]="cou",["cu"]="cu",["cr"]="cuan",["cv"]="cui",["cy"]="cun",["co"]="cuo",["da"]="da",["dd"]="dai",["dj"]="dan",["dh"]="dang",["dc"]="dao",["de"]="de",["dw"]="dei",["df"]="den",["dg"]="deng",["di"]="di",["dx"]="dia",["dm"]="dian",["dn"]="diao",["dp"]="die",["db"]="din",["dk"]="ding",["dq"]="diu",["ds"]="dong",["dz"]="dou",["du"]="du",["dr"]="duan",["dv"]="dui",["dy"]="dun",["do"]="duo",["ee"]="e",["ei"]="ei",["en"]="en",["eg"]="eng",["er"]="er",["fa"]="fa",["fj"]="fan",["fh"]="fang",["fw"]="fei",["ff"]="fen",["fg"]="feng",["fn"]="fiao",["fo"]="fo",["fs"]="fong",["fz"]="fou",["fu"]="fu",["ga"]="ga",["gd"]="gai",["gj"]="gan",["gh"]="gang",["gc"]="gao",["ge"]="ge",["gw"]="gei",["gf"]="gen",["gg"]="geng",["gs"]="gong",["gz"]="gou",["gu"]="gu",["gx"]="gua",["gk"]="guai",["gr"]="guan",["gl"]="guang",["gv"]="gui",["gy"]="gun",["go"]="guo",["ha"]="ha",["hd"]="hai",["hj"]="han",["hh"]="hang",["hc"]="hao",["he"]="he",["hw"]="hei",["hf"]="hen",["hg"]="heng",["hm"]="hm",["hq"]="hng",["hs"]="hong",["hz"]="hou",["hu"]="hu",["hx"]="hua",["hk"]="huai",["hr"]="huan",["hl"]="huang",["hv"]="hui",["hy"]="hun",["ho"]="huo",["ji"]="ji",["jx"]="jia",["jm"]="jian",["jl"]="jiang",["jn"]="jiao",["jp"]="jie",["jb"]="jin",["jk"]="jing",["js"]="jiong",["jq"]="jiu",["ju"]="ju",["jr"]="juan",["jt"]="jue",["jy"]="jun",["ka"]="ka",["kd"]="kai",["kj"]="kan",["kh"]="kang",["kc"]="kao",["ke"]="ke",["kw"]="kei",["kf"]="ken",["kg"]="keng",["ks"]="kong",["kz"]="kou",["ku"]="ku",["kx"]="kua",["kk"]="kuai",["kr"]="kuan",["kl"]="kuang",["kv"]="kui",["ky"]="kun",["ko"]="kuo",["la"]="la",["ld"]="lai",["lj"]="lan",["lh"]="lang",["lc"]="lao",["le"]="le",["lw"]="lei",["lg"]="leng",["li"]="li",["lx"]="lia",["lm"]="lian",["ll"]="liang",["ln"]="liao",["lp"]="lie",["lb"]="lin",["lk"]="ling",["lq"]="liu",["lo"]="lo",["ls"]="long",["lz"]="lou",["lu"]="lu",["lr"]="luan",["lt"]="lue",["ly"]="lun",["lo"]="luo",["lv"]="lv",["am"]="m",["ma"]="ma",["md"]="mai",["mj"]="man",["mh"]="mang",["mc"]="mao",["me"]="me",["mw"]="mei",["mf"]="men",["mg"]="meng",["mi"]="mi",["mm"]="mian",["mn"]="miao",["mp"]="mie",["mb"]="min",["mk"]="ming",["mq"]="miu",["mo"]="mo",["mz"]="mou",["mu"]="mu",["na"]="na",["nd"]="nai",["nj"]="nan",["nh"]="nang",["nc"]="nao",["ne"]="ne",["nw"]="nei",["nf"]="nen",["ng"]="neng",["aq"]="ng",["ni"]="ni",["nx"]="nia",["nm"]="nian",["nl"]="niang",["nn"]="niao",["np"]="nie",["nb"]="nin",["nk"]="ning",["nq"]="niu",["ns"]="nong",["nz"]="nou",["nu"]="nu",["nr"]="nuan",["nt"]="nue",["ny"]="nun",["no"]="nuo",["nv"]="nv",["oo"]="o",["ou"]="ou",["pa"]="pa",["pd"]="pai",["pj"]="pan",["ph"]="pang",["pc"]="pao",["pw"]="pei",["pf"]="pen",["pg"]="peng",["pi"]="pi",["px"]="pia",["pm"]="pian",["pn"]="piao",["pp"]="pie",["pb"]="pin",["pk"]="ping",["po"]="po",["pz"]="pou",["pu"]="pu",["qi"]="qi",["qx"]="qia",["qm"]="qian",["ql"]="qiang",["qn"]="qiao",["qp"]="qie",["qb"]="qin",["qk"]="qing",["qs"]="qiong",["qq"]="qiu",["qu"]="qu",["qr"]="quan",["qt"]="que",["qy"]="qun",["rj"]="ran",["rh"]="rang",["rc"]="rao",["re"]="re",["rf"]="ren",["rg"]="reng",["ri"]="ri",["rs"]="rong",["rz"]="rou",["ru"]="ru",["rx"]="rua",["rr"]="ruan",["rv"]="rui",["ry"]="run",["ro"]="ruo",["sa"]="sa",["sd"]="sai",["sj"]="san",["sh"]="sang",["sc"]="sao",["se"]="se",["sw"]="sei",["sf"]="sen",["sg"]="seng",["ua"]="sha",["ud"]="shai",["uj"]="shan",["uh"]="shang",["uc"]="shao",["ue"]="she",["uw"]="shei",["uf"]="shen",["ug"]="sheng",["ui"]="shi",["uz"]="shou",["uu"]="shu",["ux"]="shua",["uk"]="shuai",["ur"]="shuan",["ul"]="shuang",["uv"]="shui",["uy"]="shun",["uo"]="shuo",["si"]="si",["ss"]="song",["sz"]="sou",["su"]="su",["sr"]="suan",["sv"]="sui",["sy"]="sun",["so"]="suo",["ta"]="ta",["td"]="tai",["tj"]="tan",["th"]="tang",["tc"]="tao",["te"]="te",["tw"]="tei",["tg"]="teng",["ti"]="ti",["tm"]="tian",["tn"]="tiao",["tp"]="tie",["tk"]="ting",["ts"]="tong",["tz"]="tou",["tu"]="tu",["tr"]="tuan",["tv"]="tui",["ty"]="tun",["to"]="tuo",["wa"]="wa",["wd"]="wai",["wj"]="wan",["wh"]="wang",["ww"]="wei",["wf"]="wen",["wg"]="weng",["wo"]="wo",["ws"]="wong",["wu"]="wu",["xi"]="xi",["xx"]="xia",["xm"]="xian",["xl"]="xiang",["xn"]="xiao",["xp"]="xie",["xb"]="xin",["xk"]="xing",["xs"]="xiong",["xq"]="xiu",["xu"]="xu",["xr"]="xuan",["xt"]="xue",["xy"]="xun",["ya"]="ya",["yd"]="yai",["yj"]="yan",["yh"]="yang",["yc"]="yao",["ye"]="ye",["yi"]="yi",["yb"]="yin",["yk"]="ying",["yo"]="yo",["ys"]="yong",["yz"]="you",["yu"]="yu",["yr"]="yuan",["yt"]="yue",["yy"]="yun",["za"]="za",["zd"]="zai",["zj"]="zan",["zh"]="zang",["zc"]="zao",["ze"]="ze",["zw"]="zei",["zf"]="zen",["zg"]="zeng",["va"]="zha",["vd"]="zhai",["vj"]="zhan",["vh"]="zhang",["vc"]="zhao",["ve"]="zhe",["vw"]="zhei",["vf"]="zhen",["vg"]="zheng",["vi"]="zhi",["vs"]="zhong",["vz"]="zhou",["vu"]="zhu",["vx"]="zhua",["vk"]="zhuai",["vr"]="zhuan",["vl"]="zhuang",["vv"]="zhui",["vy"]="zhun",["vo"]="zhuo",["zi"]="zi",["zs"]="zong",["zz"]="zou",["zu"]="zu",["zr"]="zuan",["zv"]="zui",["zy"]="zun",["zo"]="zuo"}
-
-
-local function xh_sp_code_2_qp(input)
-   local result_table = {}
-   for i = 1, #input, 2 do
-      local pair = input:sub(i, i + 1)
-      if i + 1 > #input then
-         pair = input:sub(i)
-      end
-      table.insert(result_table, xn_sp2qp_table[pair] or pair)
-   end
-   return table.concat(result_table, " ")
-end
-
-
 --- notifier main1模式  (辅筛)
     ----------------------------
     -- 持續選詞上屏，保持輔助碼分隔符存在 --
@@ -232,35 +218,13 @@ function AuxFilter.main1_notifier(ctx)
         -- 當最終不含有任何字母時 (候選)，就跳出分割模式，並把輔助碼分隔符刪掉
         AuxFilter.Update_codes(ctx)
         ctx.input = AuxFilter.removeAuxInput
-        AuxFilter.ybtrans() 
         if AuxFilter.removetransdInput ~= "" then
 
             -- 給詞尾自動添加分隔符，上面的 re.match 會把分隔符刪掉
             ctx.input = ctx.input .. AuxFilter.trigger_key
         else
             -- 剩下的直接上屏
-            -- log.info(AuxFilter.transdcode,AuxFilter.removeAuxInput)
-            -- -- logdic(commit.text .. "|" .. commit.type .. "|" .. AuxFilter.removeAuxInput .. "|" .. AuxFilter.transdcode .. "|" .. xh_sp_code_2_qp(AuxFilter.removeAuxInput))
-            -- --- 只记录词
-            -- --- 
-            -- if utf8len(AuxFilter.transdcode)>1 then
-            --     local entry = DictEntry()
-            --     entry.text = AuxFilter.transdcode:gsub("‸+$", "")
-            --     logdic(entry.text)
-            --     entry.custom_code = xh_sp_code_2_qp(AuxFilter.removeAuxInput) .. " "
-            --     -- for i=1,#AuxFilter.removeAuxInput do
-            --     -- local c = ybsplit_indexls(entry.text)
-            --     -- logdic("ccc")
-            --     AuxFilter.memory:start_session()
-            --     local r = AuxFilter.memory:update_userdict(entry, 1, "")
-            --     AuxFilter.memory:finish_session()
-            -- end
             ctx:commit()
-            -- if utf8len(AuxFilter.transdcode)>1 then
-            --     -- logdic(AuxFilter.transdcode .. "," .. AuxFilter.removeAuxInput) 
-  
-            -- end
-
         end
     end
 
@@ -324,14 +288,6 @@ local function two_char_combinations(str)
     
     return result
 end
--- 輔助函數，用於獲取表格的所有鍵
-local function table_keys(t)
-    local keys = {}
-    for key, _ in pairs(t) do
-        table.insert(keys, key)
-    end
-    return keys
-end
 
 ----------------
 ----------------
@@ -346,11 +302,6 @@ function AuxFilter.readAuxTxt(txtpath)
     local fileAbsolutePath = userPath .. txtpath .. ".txt"
     -- log.info(fileAbsolutePath)
     -- 启动本地服务
-    local serverpath = userPath .. "/server"
-    -- local execute = os.execute("cd " .. serverpath .. " && server.exe")
-    -- if execute ~= 0 then
-    --     log.info("启动本地服务失败")
-    -- end
     local file = io.open(fileAbsolutePath, "r") or io.open(userPath .. defaultFile, "r")
     if not file then
         error("Unable to open auxiliary code file.")
@@ -362,8 +313,7 @@ function AuxFilter.readAuxTxt(txtpath)
     
     for line in file:lines() do
         line = line:match("[^\r\n]+")  -- 去除换行符
-        local zi, yb, fu = string.match(line, "([^\t]+)\t([^\t]+)\t([^\t]+)")
-    
+        local zi, fu, yb = string.match(line, "^([^\t]+)\t([^\t]+)\t?([^\t]*)$")
         if zi and yb and fu then
             local fuset = two_char_combinations(fu)
     
@@ -376,10 +326,12 @@ function AuxFilter.readAuxTxt(txtpath)
             zi_to_yin_set[zi][yb] = true
     
             -- 3. mixedCodes 构建为 set
-            mixedCodes[yb] = mixedCodes[yb] or {}
-            for _, comb in ipairs(fuset) do
-                mixedCodes[yb][comb] = mixedCodes[yb][comb] or {}
-                mixedCodes[yb][comb][zi] = true
+            if yb ~= "" then
+                mixedCodes[yb] = mixedCodes[yb] or {}
+                for _, comb in ipairs(fuset) do
+                    mixedCodes[yb][comb] = mixedCodes[yb][comb] or {}
+                    mixedCodes[yb][comb][zi] = true
+                end
             end
         end
     end
@@ -419,25 +371,13 @@ function AuxFilter.readAuxTxt(txtpath)
     AuxFilter.aux_code = auxCodes
     AuxFilter.comb_code = mixedCodes
     AuxFilter.zi_to_yin = zi_to_yin
-    
-    
-    
-    -- log.info(#mixedCodes)
+    AuxFilter.longcandimodify_flag = true
+    if table.size(AuxFilter.comb_code) == 0 then
+        AuxFilter.longcandimodify_flag = false
+        logdic("🈚️音碼配置")
+    end
     file:close()
-    if AuxFilter.yun_or then
-        os.execute('taskkill /IM server.exe /F')
-        os.execute("cd " .. serverpath .. " && cmd /c start server.exe")
-    end
     return auxCodes
-end
-
--- 定义函数来获取表的所有值
-local function table_values(tbl)
-    local values = {}
-    for _, value in pairs(tbl) do
-        table.insert(values, value)
-    end
-    return values
 end
 
 -----------------------------------------------
@@ -484,25 +424,7 @@ function AuxFilter.fullAux(env, word)
 end
 
 
--- 定义函数来将字符串两两分割  获取 音节
-local function splitToPairs(str)
-    local result = {}
-    for i = 1, #str, 2 do
-        local pair = str:sub(i, i+1) -- 取出两个字符
-        table.insert(result, pair)   -- 将两个字符插入到结果表中
-    end
-    return result
-end
 
-local function split_by_indices(str, indices)
-    local result = {}
-    local start_idx = 1
-    for _, idx in ipairs(indices) do
-        table.insert(result, string.sub(str, start_idx, idx))
-        start_idx = idx + 1
-    end
-    return result
-end
 -----------------------------------------------
 -- 判斷 auxStr 是否匹配 fullAux  --修改为了宽松匹配
 -----------------------------------------------
@@ -539,16 +461,6 @@ function AuxFilter.match(fullAux, auxStr)
             break
         end
     end
-    -- local x1 = fullAux[1]:find(auxStr:sub(1, 1)) or -1
-    -- local x2 = fullAux[2]:find(auxStr:sub(2, 2)) or -2
-    -- local xmark1 = fullAux[1][x2]==auxStr:sub(1,1)
-    -- local xmark2 = fullAux[2][x1]==auxStr:sub(2,2)
-    -- local vgpipw = firstKeyMatched and secondKeyMatched 
-    -- local fjpipw = secondKeymatched and fiestKeymatched
-    -- if AuxFilter.matchmode==1 then
-    --     return vgpipw and (xmark1 or xmark2)
-    -- end
-    -- return vgpipw or fjpipw
     return mark
 end
 local function split_pinyin(pinyin_str)
@@ -567,31 +479,6 @@ function slice(tbl, start_idx, end_idx)
     end
     return sliced
 end
-local function ybsplit_indexls(candset)
-    local lastindex = 0
-    local stindex = {}
-    for i=1,utf8len(candset) do
-        local zi = utf8sub(candset,i,i)
-        local yb = AuxFilter.zi_to_yin[zi]
-        if yb then
-            local fe = 1000
-            for _,v in ipairs(yb) do
-                local s,e = AuxFilter.removetransdInput:find(v,lastindex+1)
-                if e~=nil then
-                    if e>lastindex and e<fe then
-                        fe = e
-                    end
-                end
-            end
-            table.insert(stindex,fe)
-            lastindex = fe
-        else
-            return {}
-            --- 如果是包含非汉字候选，直接返回。
-        end
-    end
-    return stindex
-end
 --计算 制定长度切片元素的长度和
 local function sum_lengths(slice, n)
     local total = 0
@@ -609,8 +496,10 @@ local function transform_preedit(tbl,n)
     for i = 1,n do
         local jp = tbl[i]
         if jp then
-            -- logdic("jp")
-            local rs = AuxFilter.preedit_trans:apply(jp,true)
+            local rs = jp
+            if AuxFilter.preedit_trans then
+                rs = AuxFilter.preedit_trans:apply(jp,true)
+            end
             result[i] = rs
         end
     end
@@ -622,7 +511,6 @@ candisub.__index = candisub
 
 -- 构造函数
 function candisub:new(cand,s_len)
-    -- logdic(cand.text .."|"..cand:get_dynamic_type())
     local self = setmetatable({}, candisub)
     self.cand = cand
     self.type = cand.type
@@ -648,13 +536,11 @@ function candisub:new(cand,s_len)
         if ficompensate>0 then
            ficompensate = 0
         end
-        -- logdic("222" .. ficompensate)
         if ficompensate~=0 or s_len ~=nil then
             if s_len then
                AuxFilter.firstcand_len = s_len
                AuxFilter.last_fist_commit = {}
             end
-            -- local prelen = AuxFilter.firstcand_len or
             AuxFilter.prelen = AuxFilter.prelen or AuxFilter.firstcand_len + ficompensate
             local prelen = AuxFilter.prelen
             if prelen<=rlen then
@@ -696,10 +582,7 @@ end
 -- 返回指定长度的候选
 function AuxFilter.yield_candisub(cand)
     local finalcandi = cand
-    -- logdic(cand.cand.text)
-    -- logdic("finalcandi"..finalcandi.text .. AuxFilter.inputCode .. finalcandi.type)
     if (AuxFilter.yieldset[finalcandi.cand.text]~=nil)then
-        -- logdic("skip 重复"..finalcandi.text)
         return    
     end
     AuxFilter.last_fist_commit = AuxFilter.last_fist_commit or {}
@@ -709,18 +592,14 @@ function AuxFilter.yield_candisub(cand)
     if AuxFilter.counter == 0 then
         if #AuxFilter.auxStr == 1 then
             if AuxFilter.last_fist_commit[1] == finalcandi.cand.text then
-                -- logdic("bbb")
-                -- logdic("skip1"..finalcandi.text.."=="..AuxFilter.last_fist_commit[1])
                 return
             end
         elseif #AuxFilter.auxStr == 2 then
             if AuxFilter.last_fist_commit[1] == finalcandi.cand.text or AuxFilter.last_fist_commit[2] == finalcandi.cand.text then
-                -- logdic("skip2"..finalcandi.text.."=="..AuxFilter.last_fist_commit[1].."=="..AuxFilter.last_fist_commit[2])
                 return
             end
         end
     end
-    -- logdic("ccc")
     if AuxFilter.turned~=true then
         AuxFilter.yieldset[finalcandi.cand.text] = true
     end
@@ -730,20 +609,15 @@ function AuxFilter.yield_candisub(cand)
             AuxFilter.firstcand_len = utf8len(finalcandi.cand.text)
             if #AuxFilter.auxStr == 0 then
                 AuxFilter.last_fist_commit[1] = finalcandi.cand.text
-                -- logdic("write1" .. finalcandi.cand.text)
             elseif #AuxFilter.auxStr == 1 then
                 AuxFilter.last_fist_commit[2] = finalcandi.cand.text
-                -- logdic("write2" .. finalcandi.cand.text)
             end
         else
-            -- logdic("no1"..finalcandi.text)
         end
         local cand = finalcandi.cand
-        -- logdic("yield 😄"..AuxFilter.inputCode .. "|"..cand.type .. "|"..cand.text.."|"..cand.comment.."|"..cand.preedit)
         yield(finalcandi.cand)
     else
         AuxFilter.skipc=AuxFilter.skipc-1
-        -- logdic("skip by wipe"..finalcandi.text)
     end
 
 end
@@ -767,14 +641,12 @@ local function combmath(aux,tab)
         if #aux~=0 then
             if not (boolaux(tab[aux]) or boolaux(tab[aux:reverse()])) then --
                 mark = false
-                -- log.info(aux,tab[aux],tab[aux:reverse()],table.concat(table_keys(tab),"-"))
             end
         end
     elseif AuxFilter.matchmode==1 then
         if #aux~=0 then
             if not boolaux(tab[aux]) then
                 mark = false
-                -- log.info(aux,tab[aux],table.concat(table_keys(tab),"-"))
             end
         end
     end
@@ -789,14 +661,6 @@ local function main_main(env,cand)
     local auxCodes = AuxFilter.aux_code[cand.ftext] -- 僅單字非 nil
     -- logdic(cand.text)
     local fullAuxCodes = AuxFilter.fullAux(env, cand.ftext)
-
-
-    -- 查看 auxCodes
-    -- log.info(cand.text, #auxCodes)
-    -- for i, cl in ipairs(auxCodes) do
-    --     log.info(i, table.concat(cl, ',', 1, #cl))
-    -- end
-
     -- 給待選項加上輔助碼提示
     if AuxFilter.show_aux_notice and auxCodes and #auxCodes > 0 then
         local codeComment = table.concat(auxCodes, ',')
@@ -815,19 +679,6 @@ local function main_main(env,cand)
         -- 更新逻辑：没有匹配上就不出现再候选框里，提升性能
     end
 end
-function len_of_zi(zi)
-    local len = 0
-    for i=1,utf8len(zi) do
-        local zi = utf8sub(zi,i,i)
-        local yb = AuxFilter.zi_to_yin[zi]
-        if yb then
-            len = len + #yb
-        else
-            return 0
-        end
-    end
-    return len
-end
 local function best_match(list, key)
     local best = nil
     local best_len = 0
@@ -843,7 +694,6 @@ local function best_match(list, key)
 end
 --- 分支一 原来的功能
 function AuxFilter.main1(input,env)
-    -- logdic("main1")
     env.notifiermark = 1  --辅筛情况下的 选词后的逻辑标记 变为 1
     -- 分割部分正式開始
     AuxFilter.auxStr = ""
@@ -863,46 +713,16 @@ function AuxFilter.main1(input,env)
     AuxFilter.rightcompen = countSubstringOccurrences(AuxFilter.funccode,"d") + 2 * countSubstringOccurrences(AuxFilter.funccode,"f") -- 右偏移
     AuxFilter.skipc = countSubstringOccurrences(AuxFilter.funccode,"w")
     -- 更新逻辑：没有匹配上就不出现再候选框里，提升性能
-    -- local insertLater = {}
-
-    -- 遍歷每一個待選項
     AuxFilter.counter = 0 -- 计数返回候选数量
     local firstcandi = ""      -- 第一个候选也就是最长的那个
     local index=0  --为了获取第一个候选的判断变量
     for cand in input:iter() do
-        -- logdic("如如如如"..AuxFilter.inputCode .. "|"..cand.type .. "|"..cand.text.."|"..cand.comment.."|"..cand.preedit)
         if (AuxFilter.single_flag  and #split_pinyin(cand.preedit) == 1) or (not AuxFilter.single_flag) then
             index = index+1
             --第一个候选词 额外逻辑
             if index==1 then
                 firstcandi = cand
-                -- -- logdic("修改")
-                -- -- logdic(firstcandtext .. "修改后")
-                -- AuxFilter.stindex = ybsplit_indexls(firstcandi.text)
-                -- logdic(str_table(AuxFilter.stindex))
-                -- if #AuxFilter.stindex==0 then  --不合法的情况。
-                --     logdic("不合法的情况")
-                --     return
-                -- end
-                if #(AuxFilter.firstcandipre)~=0 then
-                    local i = 0
-                    for _, value in ipairs(AuxFilter.firstcandipre) do
-                        i = i+1
-                        if i==1 then
-                            firstcandi = value
-                        end
-                        value._start = cand._start
-                        local len = len_of_zi(value.text)
-                        if len ==0 then
-                            return
-                        end
-                        value._end  = cand._start+len
-                        main_main(env,value)
-                    end
-                    
-                end
                 main_main(env,cand)   
-                -- logdic("After break, firstcandtext: " .. (firstcandtext or "NIL"))
                 break
             end
 
@@ -910,62 +730,36 @@ function AuxFilter.main1(input,env)
 
     end
 
-    -- logdic("before second loop, firstcandtext: " .. (firstcandtext or "NIL"))
     for value in input:iter() do
-        -- logdic("如如如如"..AuxFilter.inputCode .. "|"..value.type .. "|"..value.text.."|"..value.comment.."|"..value.preedit)
-
         main_main(env,value)
-
     end
     if AuxFilter.turned==true then
         AuxFilter.turned = false
     end
-    -- logdic("after second loop, firstcandtext: " .. (firstcandtext or "NIL"))
     --如果辅筛没筛出来,提示你进行辅断
     if AuxFilter.counter==0 then
-        -- logdic("请进行辅断"..firstcandi.text)
-        -- local inputspls  = splitToPairs(AuxFilter.removetransdInput) --未翻译的音码集合
-        -- local inputspls = split_by_indices(AuxFilter.removetransdInput, AuxFilter.stindex) --未翻译的音码集合
+        local commentfirst =  "无匹配"
         local inputspls =  split_pinyin(firstcandi.preedit)
-        -- log.info("inputls")
-        logdic(str_table(inputspls))
-        local matchybtab = {} --辅码可以组合的未翻译的音码的集合
-        -- logdic("wu🐉"..firstcandtext)
-        -- log.info(auxStr)
         local firstcandi = candisub:new(firstcandi)
-        if firstcandi.line then
-            for index, value in ipairs(inputspls) do
-                -- logdic(firstcandi.ftext)
-                local zi = utf8sub(firstcandi.ftext,index,index)
-                local best_value = best_match(AuxFilter.zi_to_yin[zi],value)
-                local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value]
-
-                -- logdic("ccc")
-                -- logdic(str_table(auxtab))
-                -- log.info(auxtab)
-                if combmath(AuxFilter.auxStr,auxtab) then
-                    -- log.info("111")
-                    -- logdic("匹配过去"..AuxFilter.auxStr.."|"..str_table(auxtab))
-                    -- logdic(firstcandtext)
-                    table.insert(matchybtab,tostring(index).."." .. utf8sub(firstcandi.cand.text,index,index))
-                    -- logdic("插入")
+        if AuxFilter.longcandimodify_flag then
+            local matchybtab = {} --辅码可以组合的未翻译的音码的集合
+            if firstcandi.line then
+                for index, value in ipairs(inputspls) do
+                    local zi = utf8sub(firstcandi.ftext,index,index)
+                    local best_value = best_match(AuxFilter.zi_to_yin[zi],value)
+                    local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value]
+                    if combmath(AuxFilter.auxStr,auxtab) then
+                        table.insert(matchybtab,tostring(index).."." .. utf8sub(firstcandi.cand.text,index,index))
+                    end
                 end
             end
+            if #matchybtab~=0 then
+                commentfirst = table.concat(matchybtab,"--")
+            end
+        else
+            commentfirst = "無匹配"
         end
-        -- for i,v in ipairs(matchybtab) do
-        --     logdic(v)
-        -- end
-        -- log.info(111)
-        local commentfirst =  "无匹配"
-        if #matchybtab~=0 then
-            commentfirst = table.concat(matchybtab,"--")
-        end
-            -- log.info(firstcandi.text)
-        -- logdic(commentfirst)
         firstcandi.cand.comment = commentfirst
-  
-        -- log.info(firstcandi.text)
-        -- log.info("comment" ,commentfirst)
         yield(firstcandi.cand)
     end
 end
@@ -974,16 +768,6 @@ end
 
 --- 无触发分支
 function AuxFilter.defaultmain(input,env)
-    -- log.info(1)
-    -- local l = #AuxFilter.removetransdInput
-    -- local vf,yu = math.modf(l/2)
-    -- if yu~=0 then
-    --     AuxFilter.auxStr = AuxFilter.removetransdInput:sub(-1) or ""
-    --     for cand in input:iter() do
-    --         main_main(env,cand)
-    --     end
-    --     return
-    -- end  
     for cand in input:iter() do
         -- logdic(cand.preedit)
 
@@ -1000,9 +784,6 @@ function AuxFilter.defaultmain(input,env)
             cand.preedit = preedit
         end
         yield(cand)
-        -- cand = candisub:new(cand)
-        -- logdic("iggs")
-        -- AuxFilter.yield_candisub(cand)
     end
     
 end
@@ -1023,41 +804,12 @@ function AuxFilter.longcandimodify(input,env)
         firstcandi = cand
         break
     end
-    if #(AuxFilter.firstcandipre) ~=0 then
-        local candi = table.remove(AuxFilter.firstcandipre)
-        candi._start = firstcandi._start
-        candi._end  = firstcandi._end
-        firstcandi = candi
-    end
     local auxcode = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "(%a*)" .. AuxFilter.trigger_key_pattern) --辅码部分
     -- log.info("auxcode",auxcode)
     local funccode = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .. "+(%a*)") --功能码部分
     -- log.info("fucncode",funccode)
     local ybmodif = funccode:match("s(%a+)") --功能码部分捕获的修音的音码
-    -- local yyciif = countSubstringOccurrences(funccode,"y")
-    -- local pinyin = firstcandi.preedit:gsub("%s+", "")
-    -- if  yyciif==1 then
-    --     -- local url = make_url(pinyin, 0, 5)
-    --     local url = "http://localhost:6234/pre/".. pinyin
-    --     http.request(url)
-    --     return
-    --     -- log.info(reply)
-
-    --     end   
-    -- if yyciif==2 then
-    --     local url = "http://localhost:6234/result/".. pinyin
-    --     local reply = http.request(url)
-    --     if reply~="" then
-    --         for word in string.gmatch(reply, "[^@]+") do 
-    --             yield(Candidate("simple", firstcandi._start, firstcandi._end, word, "(百度云拼音)"))
-    --         end
-    --     end
-    --     return
-
         
-
-        
-    -- end
         
     if ybmodif then 
         --进入修音分支处理
@@ -1108,7 +860,6 @@ function AuxFilter.longcandimodify(input,env)
         AuxFilter.ybmodifiedcode = AuxFilter.transdcodei .. inputcode2 .. AuxFilter.trigger_key  --修改后的音码 + 引导键
 
         AuxFilter.removetransdInput = inputcode2:sub(1,-2)
-        AuxFilter.ybtrans()
         yield(Candidate(firstcandi.type,firstcandi._start,firstcandi._start,"",wrongyb .."->" .. ybmodif))  --"确定"  候选项
     
     --在断点处断句逻辑
@@ -1129,134 +880,6 @@ end
 
 
 
-
---- 输入单字分支  对于诗文类或许有用
-function AuxFilter.singlechar(input,env)
-    env.notifiermark = 4 --单字分支下选词后逻辑 的标记
-    local  inputcode =env.engine.context.input
-    local  ybxkinputcode = inputcode:sub(2,-1)
-    local  ybcode = ""
-    local xkcode = ""
-    if #inputcode==3 then  -- 引导键+两位音码   返回音码 下的所有单字并注释形码
-        ybcode = inputcode:sub(2,-1) 
-        local ci = AuxFilter.comb_code[ybcode]
-        local finalkey = {}
-        for k,v in pairs(ci) do 
-            if #k==2 then 
-                for i,v in pairs(v) do
-                    finalkey[v] = k
-                end
-            end
-        end
-        for k,v in pairs(finalkey) do
-            if AuxFilter.show_aux_notice then
-                yield(Candidate("single",1,#inputcode,k,v))
-            else
-                yield(Candidate("single",1,#inputcode,k,""))
-            end
-            
-        end
-        return
-
-    else                    --引导键 + 两位音码 +形码   返回 音形共同定位下的字 并注释形码
-        ybcode = ybxkinputcode:sub(1,2)
-        xkcode = ybxkinputcode:sub(3,-1)
-        -- log.info(xkcode)
-        local ci = AuxFilter.comb_code[ybcode]
-        if not ci then
-            return
-        end
-        if AuxFilter.matchmode==0 then
-            ci = AuxFilter.comb_code[ybcode][xkcode] or AuxFilter.comb_code[ybcode][xkcode:reverse()]
-        else 
-            ci = AuxFilter.comb_code[ybcode][xkcode]
-        end
-        if ci then
-        if table.size(ci) ~= 0 then
-            for k,v in  pairs(ci) do
-                local comment = AuxFilter.aux_code[v] or {}
-                local comment = table.concat(comment,"-")
-                if AuxFilter.show_aux_notice then 
-                    yield(Candidate("single",1,#inputcode,v,comment))
-                else
-                    yield(Candidate("single",1,#inputcode,v,""))
-                end
-            end
-        end
-        else
-        env.engine.context:clear()
-        env.engine.context:push_input(inputcode:sub(1,3))
-        -- env.engine.context.input = inputcode:sub(1,3)  --这是输入形码无效后回退到没有形码 ,保留引导键和音码 
-        return
-        end
-    end
-end
-------------------
--- filter 主函數 --
-------------------
--- local function osget(inp)
---     local order = rime_api.get_user_data_dir() .. "/lua/" .. 'qkqq '.. inp
---     log.info(order)
---     local handle = io.popen(order)
---     local result = handle:read("*a")
---     handle:close()
---     return result
-    
--- end
-
--- 定义提取键值对的函数
-local function extractKeyValuePairs(input)
-    -- 分割字符串的辅助函数
-    local function split(str, delimiter)
-        local result = {}
-        for match in (str .. delimiter):gmatch("(.-)" .. delimiter) do
-            table.insert(result, match)
-        end
-        return result
-    end
-
-    local entries = split(input, "@")
-    local keyValuePairs = {}
-
-    for _, entry in ipairs(entries) do
-        local key, value = entry:match("([^$]+)%$(.+)")
-        if key and value then
-            table.insert(keyValuePairs, {key = key, value = value})
-        end
-    end
-
-    return keyValuePairs
-end
-
-
-
-function AuxFilter.ybtrans()
-    if not AuxFilter.yun_or then
-        return
-    end
-    local l = #AuxFilter.removetransdInput
-    if l<=4 then
-        return
-    end
-    local vf,yu = math.modf(l/2)
-    if yu~=0 then
-        local url = "http://127.0.0.1:6790/pre/".. AuxFilter.removetransdInput
-        -- logdic("云拼音请求"..AuxFilter.removetransdInput)
-        http.request(url)
-        -- osget(AuxFilter.removetransdInput)
-        return
-    else
-        local url = "http://127.0.0.1:6790/result/".. AuxFilter.removetransdInput
-        -- logdic("云拼音请求"..AuxFilter.removetransdInput)
-        local reply = http.request(url)
-        if reply~="" then
-            for _,word in ipairs(extractKeyValuePairs(reply)) do 
-                table.insert(AuxFilter.firstcandipre,Candidate("simple", 0, l, word.key, word.value))
-            end
-        end
-        return
-    end
-end
 -- 使用示例
 function AuxFilter.Update_codes(ctx)
     local context = ctx
@@ -1293,32 +916,22 @@ function AuxFilter.func(input, env)
     -- log.info("输入码",AuxFilter.inputCode)
     -- logdic("出發")
     env.notifiermark = -1
-    AuxFilter.firstcandipre = {}
     AuxFilter.yieldset = {}
     AuxFilter.leftcompen = 0
     AuxFilter.rightcompen = 0
     AuxFilter.skipc = 0
-    AuxFilter.ficompensate = nil
     AuxFilter.counter = 0
-    AuxFilter.prelen = nil
-    AuxFilter.single_flag = AuxFilter.single_flag or false
+    AuxFilter.prelen = nil -- 第一個詞的長度 用於偏離計算
+    AuxFilter.single_flag = AuxFilter.single_flag or false --標記篩選類型是哪個
     local ctx = env.engine.context
     AuxFilter.Update_codes(ctx)
-    -- 云词处理
-    if AuxFilter.yun_or then
-        AuxFilter.ybtrans()
-    end
-
-    -- log.info(#(AuxFilter.firstcandipre))
     -- 分流
     local pattern_main1 = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*$'  --辅筛分支的正则
     local pattern_long = "^%a+" ..AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .."+%a*$" --长句修改分支的正则
-    -- local pattern_singlechar = "^" .. AuxFilter.trigger_key_pattern .. "%a%a%a?%a?$"  -- 单字输入分支
     local pattern_singlechar_switch = "^%a+" .. AuxFilter.trigger_key_pattern .."`"..'%a*$'  -- 单字输入分支
 -- 
     if string.match(AuxFilter.inputCode,pattern_main1)then
         -- log.info("进入分支1",AuxFilter.inputCode)
-        -- AuxFilter.main1(input,env)
         local composition = env.engine.context.composition
         if(not composition:empty()) then
             local segment = composition:back()
@@ -1336,28 +949,15 @@ function AuxFilter.func(input, env)
         -- logdic("进入分支3",AuxFilter.inputCode)
         switch_single_char(env.engine.context)
         AuxFilter.main1(input,env)
-        -- env.engine.context.input = "aa"
-        -- log.info("进入分支3",AuxFilter.inputCode)
-    --都不匹配直接返回的分支
     else
         AuxFilter.last_fist_commit = nil
         AuxFilter.defaultmain(input,env)
     end
-    -- local url = "https://chatgpt.com/c/67f3a89e-d250-8009-8373-ddd2e5b7eb6f"
-    -- -- logdic("云拼音请求"..AuxFilter.removetransdInput)
-    -- local reply = http.request(url)
-    -- env.engine.context.input = "aaaaa"
     
 end
 
 function AuxFilter.fini(env)
     -- log.info("fini")
     env.notifier:disconnect()
-
-
-
-     
-
 end
-
 return AuxFilter
