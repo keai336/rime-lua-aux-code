@@ -580,7 +580,7 @@ function candisub:new(cand,s_len)
                 if preedit_flag then
                     preedit = table.concat(transform_preedit(preeditls,len), " ")
                 end
-                if rawflag then
+                if rawflag or AuxFilter.yieldset[self.ftext] then
                     self.cand.preedit = preedit
                 else
                     self.cand:get_genuine().preedit = preedit
@@ -591,12 +591,12 @@ function candisub:new(cand,s_len)
         end
     else 
     end
-    self.cand = Candidate(cand.type,cand._start,cand._end,cand.text,cand.comment)
+    -- self.cand = Candidate(cand.type,cand._start,cand._end,cand.text,cand.comment)
     local preedit = table.concat(slice(preeditls,1,rlen), " ")
     if preedit_flag then
         preedit = table.concat(transform_preedit(preeditls,rlen), " ")
     end
-    if rawflag then
+    if rawflag or AuxFilter.yieldset[self.ftext] then
         self.cand.preedit = preedit
     else
         self.cand:get_genuine().preedit =preedit
@@ -748,6 +748,7 @@ function AuxFilter.main1(input,env)
     -- 更新逻辑：没有匹配上就不出现再候选框里，提升性能
     AuxFilter.counter = 0 -- 计数返回候选数量
     local firstcandi = ""      -- 第一个候选也就是最长的那个
+    local rawpreedit = ""
     local index=0  --为了获取第一个候选的判断变量
     for cand in input:iter() do
         if (AuxFilter.single_flag  and #split_pinyin(cand.preedit) == 1) or (not AuxFilter.single_flag) then
@@ -755,6 +756,7 @@ function AuxFilter.main1(input,env)
             --第一个候选词 额外逻辑
             if index==1 then
                 firstcandi = cand
+                rawpreedit = cand.preedit
                 main_main(env,cand)   
                 break
             end
@@ -772,7 +774,8 @@ function AuxFilter.main1(input,env)
     --如果辅筛没筛出来,提示你进行辅断
     if AuxFilter.counter==0 then
         local commentfirst =  "无匹配"
-        local inputspls =  split_pinyin(firstcandi.preedit)
+        local inputspls =  split_pinyin(rawpreedit)
+        firstcandi.preedit = rawpreedit
         local firstcandi = candisub:new(firstcandi)
         if AuxFilter.longcandimodify_flag and (not AuxFilter.single_flag) then
             local matchybtab = {} --辅码可以组合的未翻译的音码的集合
@@ -801,22 +804,10 @@ end
 
 --- 无触发分支
 function AuxFilter.defaultmain(input,env)
-    for cand in input:iter() do
-        -- logdic(cand.preedit)
 
-        -- logdic(AuxFilter.inputCode .. "|"..cand.type .. "|"..cand.text.."|"..cand.comment.."|"..cand.preedit)
-        local preeditls = split_pinyin(cand.preedit)
-        local preedit =  table.concat(transform_preedit(preeditls,#preeditls), " ")
-        if cand.type =="completion" or cand.type:find("table") then
-            preedit =  table.concat(slice(preeditls,1,#preeditls), " ")
-        end
-        if cand.type =="Shadow" or cand.type == "simplified" then
-            local rawcand = cand:get_genuine()
-            rawcand.preedit = preedit
-        else
-            cand.preedit = preedit
-        end
-        yield(cand)
+    for cand in input:iter() do
+        cand = candisub:new(cand)
+        AuxFilter.yield_candisub(cand)
     end
     
 end
