@@ -118,8 +118,15 @@ end
 function AuxFilter.init(env)
     local engine = env.engine
     AuxFilter.memory = Memory(env.engine, env.engine.schema)
-    local defaultuserprefer = {path="ZRM_Aux-code",showor="true",trigger=";",matchmode="s"}
-    local keys = {"path", "showor","trigger", "matchmode"}
+    -- local defaultuserprefer = {path="ZRM_Aux-code",showor="on",trigger=";", switch = "`",matchmode="s"}
+    local defaultuserprefer = {
+        path = "ZRM_Aux-code",
+        showor = "on",
+        trigger = ";",
+        ["switch"] = "`",  -- 注意这里
+        matchmode = "s"
+    }
+    local keys = {"path", "showor","trigger","switch", "matchmode"}
     local userprefer = string.gmatch(env.name_space,"([^@]+)") or ""
     local counter0 = 0
     for item in userprefer do
@@ -146,8 +153,9 @@ function AuxFilter.init(env)
     AuxFilter.trigger_key = defaultuserprefer["trigger"]
     AuxFilter.trigger_key_pattern = AuxFilter.trigger_key:gsub("%W", "%%%1") -- 處理特殊字符  --正则中应该表现的形式。
     -- 设定是否显示辅助码，默认为显示
+    AuxFilter.switch_key = defaultuserprefer["switch"]:gsub("%W", "%%%1")
     AuxFilter.show_aux_notice = defaultuserprefer["showor"]
-    if AuxFilter.show_aux_notice == "false" then
+    if AuxFilter.show_aux_notice == "off" then
         AuxFilter.show_aux_notice = false
     else
         AuxFilter.show_aux_notice = true
@@ -289,6 +297,17 @@ local function two_char_combinations(str)
     return result
 end
 
+local function split(str, sep)
+    local result = {}
+    if str == "" then
+        return result
+    end
+    for part in string.gmatch(str, "([^" .. sep .. "]+)") do
+        table.insert(result, part)
+    end
+    return result
+end
+
 ----------------
 ----------------
 -- 閱讀輔碼文件 --
@@ -314,30 +333,29 @@ function AuxFilter.readAuxTxt(txtpath)
     for line in file:lines() do
         line = line:match("[^\r\n]+")  -- 去除换行符
         local zi, fu, yb = string.match(line, "^([^\t]+)\t([^\t]+)\t?([^\t]*)$")
-        if zi and yb and fu then
-            local fuset = two_char_combinations(fu)
-    
+        if zi and fu and yb then
+            local fuls = split(fu, ",")
             -- 1. 去重插入 auxCodesSet
-            auxCodesSet[zi] = auxCodesSet[zi] or {}
-            auxCodesSet[zi][fu] = true
-    
+            for _, fuone in ipairs(fuls) do
+                auxCodesSet[zi] = auxCodesSet[zi] or {}
+                auxCodesSet[zi][fuone] = true
+                local fuset = two_char_combinations(fuone)
+                -- 3. mixedCodes 构建为 set
+                if yb ~= "" then
+                    mixedCodes[yb] = mixedCodes[yb] or {}
+                    for _, comb in ipairs(fuset) do
+                        mixedCodes[yb][comb] = mixedCodes[yb][comb] or {}
+                        mixedCodes[yb][comb][zi] = true
+                    end
+                end
+            end
             -- 2. 去重插入 zi_to_yin_set
             zi_to_yin_set[zi] = zi_to_yin_set[zi] or {}
             zi_to_yin_set[zi][yb] = true
-    
-            -- 3. mixedCodes 构建为 set
-            if yb ~= "" then
-                mixedCodes[yb] = mixedCodes[yb] or {}
-                for _, comb in ipairs(fuset) do
-                    mixedCodes[yb][comb] = mixedCodes[yb][comb] or {}
-                    mixedCodes[yb][comb][zi] = true
-                end
-            end
         end
     end
     
     -- 将 set 转换为数组形式（后处理）
-    
     -- auxCodes: 字 -> {辅码列表}
     local auxCodes = {}
     for zi, fu_set in pairs(auxCodesSet) do
@@ -439,26 +457,32 @@ function AuxFilter.match(fullAux, auxStr)
     -- 如果辅助码只有一个键，且第一个键匹配两辅码中任意一个，则返回 true
     if #auxStr == 1 then
         -- 为了与断句的逻辑统一,还是不加这个分支了
-        -- if AuxFilter.matchmode==1 then
-        --     return firstKeyMatched
-        -- end
-        
-        return firstKeyMatched
+        if AuxFilter.matchmode==1 then
+            return firstKeyMatched
+        elseif AuxFilter.matchmode==0 then
+            return firstKeyMatched or secondKeymatched
+        end
     end
-    -- 宽松模式下如果辅助码有两个或以上,有效组合的排列都有效  严格模式下 顺序一致有效
+    -- 宽松模式下如果辅助码有两个有效组合的排列都有效  严格模式下 顺序一致有效
     local auxStr1 = auxStr:sub(1,1)
     local auxStr2 = auxStr:sub(2,2)
-    local fiestKeymatched = fullAux[1]:find(auxStr:sub(2, 2)) ~= nil
-    local secondKeyMatched = fullAux[2] and fullAux[2]:find(auxStr:sub(2, 2)) ~= nil
     local mark = false
     for i=1,#fullAux[1] do
         local f1 = fullAux[1]:sub(i,i)
         local f2 = fullAux[2]:sub(i,i)
-        local f1m = f1 == auxStr1
-        local f2m = f2 == auxStr2
-        if f1m and f2m then
+        local vm1 = f1 == auxStr1
+        local vm2 = f2 == auxStr2
+        local fm1 = f2 == auxStr1
+        local fm2 = f1 == auxStr2
+        if vm1 and vm2 then
             mark = true
             break
+        end
+        if AuxFilter.matchmode == 0 then
+            if fm1 and fm2 then
+                mark = true
+                break
+            end
         end
     end
     return mark
@@ -680,18 +704,27 @@ local function main_main(env,cand)
     end
 end
 local function best_match(list, key)
+    if list == nil then
+        return key
+    end
     local best = nil
     local best_len = 0
+
     for _, item in ipairs(list) do
         if item:sub(1, #key) == key then
-            if #key > best_len then
-                best = item
-                best_len = #key
-            end
+            best = item
+            break  -- 找到就返回
         end
     end
+
+    -- 如果没有匹配，就返回第一个元素（如果存在）
+    if not best and #list > 0 then
+        best = list[1]
+    end
+
     return best
 end
+
 --- 分支一 原来的功能
 function AuxFilter.main1(input,env)
     env.notifiermark = 1  --辅筛情况下的 选词后的逻辑标记 变为 1
@@ -741,13 +774,13 @@ function AuxFilter.main1(input,env)
         local commentfirst =  "无匹配"
         local inputspls =  split_pinyin(firstcandi.preedit)
         local firstcandi = candisub:new(firstcandi)
-        if AuxFilter.longcandimodify_flag then
+        if AuxFilter.longcandimodify_flag and (not AuxFilter.single_flag) then
             local matchybtab = {} --辅码可以组合的未翻译的音码的集合
             if firstcandi.line then
                 for index, value in ipairs(inputspls) do
                     local zi = utf8sub(firstcandi.ftext,index,index)
                     local best_value = best_match(AuxFilter.zi_to_yin[zi],value)
-                    local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value]
+                    local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value] or {}
                     if combmath(AuxFilter.auxStr,auxtab) then
                         table.insert(matchybtab,tostring(index).."." .. utf8sub(firstcandi.cand.text,index,index))
                     end
@@ -831,7 +864,7 @@ function AuxFilter.longcandimodify(input,env)
     for index, value in ipairs(inputspls) do
         local zi = utf8sub(AuxFilter.ftext,index,index)
         local best_value = best_match(AuxFilter.zi_to_yin[zi],value)
-        local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value]
+        local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value] or {}
         -- logdic(str_table(auxtab))
 
         if combmath(auxcode,auxtab) then
@@ -908,7 +941,7 @@ local function switch_single_char(ctx)
         AuxFilter.single_flag = true
     end
     AuxFilter.turned = true
-    ctx.input = ctx.input:gsub("`","")
+    ctx.input = ctx.input:gsub(AuxFilter.switch_key,"")
     AuxFilter.Update_codes(ctx)
     -- logdic(AuxFilter.inputCode)
 end
@@ -928,7 +961,7 @@ function AuxFilter.func(input, env)
     -- 分流
     local pattern_main1 = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*$'  --辅筛分支的正则
     local pattern_long = "^%a+" ..AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .."+%a*$" --长句修改分支的正则
-    local pattern_singlechar_switch = "^%a+" .. AuxFilter.trigger_key_pattern .."`"..'%a*$'  -- 单字输入分支
+    local pattern_singlechar_switch = "^%a+" .. AuxFilter.trigger_key_pattern ..AuxFilter.switch_key..'%a*$'  -- 单字输入分支
 -- 
     if string.match(AuxFilter.inputCode,pattern_main1)then
         -- log.info("进入分支1",AuxFilter.inputCode)
