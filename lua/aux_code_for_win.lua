@@ -765,8 +765,10 @@ function AuxFilter.main1(input,env)
 
     end
 
-    for value in input:iter() do
-        main_main(env,value)
+    for cand in input:iter() do
+        if (AuxFilter.single_flag  and #split_pinyin(cand.preedit) == 1) or (not AuxFilter.single_flag) then
+            main_main(env,cand)
+        end
     end
     if AuxFilter.turned==true then
         AuxFilter.turned = false
@@ -806,7 +808,10 @@ end
 function AuxFilter.defaultmain(input,env)
 
     for cand in input:iter() do
+        -- logdic(cand.preedit)
+        -- logdic("in⚠️"..AuxFilter.inputCode .. "|"..cand.type .. "|"..cand.text.."|"..cand.comment.."|"..cand.preedit)
         cand = candisub:new(cand)
+        
         AuxFilter.yield_candisub(cand)
     end
     
