@@ -562,11 +562,14 @@ function candisub:new(cand,s_len)
         end
         if ficompensate~=0 or s_len ~=nil then
             if s_len then
-               AuxFilter.firstcand_len = s_len
                AuxFilter.last_fist_commit = {}
             end
-            AuxFilter.prelen = AuxFilter.prelen or AuxFilter.firstcand_len + ficompensate
-            local prelen = AuxFilter.prelen
+            if AuxFilter.prelen == nil then
+                AuxFilter.prelen = slen
+            end
+            logdic("len"..tostring(AuxFilter.prelen)..cand.text)
+            local prelen = AuxFilter.prelen + ficompensate
+            logdic(tostring(prelen).."prelen")
             if prelen<=rlen then
                 len = prelen
                 if len<1 then
@@ -680,22 +683,28 @@ local function combmath(aux,tab)
 return mark
 end
 local function main_main(env,cand)
-    cand = candisub:new(cand)
+    local ftext = cand.text
+    if cand:get_dynamic_type() == "Shadow" then
+        ftext = cand:get_genuine().text
+    end
 
-    local auxCodes = AuxFilter.aux_code[cand.ftext] -- 僅單字非 nil
+    local auxCodes = AuxFilter.aux_code[ftext] -- 僅單字非 nil
     -- logdic(cand.text)
-    local fullAuxCodes = AuxFilter.fullAux(env, cand.ftext)
+    local fullAuxCodes = AuxFilter.fullAux(env,ftext)
     -- 給待選項加上輔助碼提示
     if AuxFilter.show_aux_notice and auxCodes and #auxCodes > 0 then
         local codeComment = table.concat(auxCodes, ',')
-        cand.cand.comment = cand.cand.comment .. '(' .. codeComment .. ')'
+        cand.comment = cand.comment .. '(' .. codeComment .. ')'
     end
     -- 過濾輔助碼
     if #(AuxFilter.auxStr) == 0 then
         -- 沒有輔助碼、不需篩選，直接返回待選項
+        cand = candisub:new(cand)
+
         AuxFilter.yield_candisub(cand)
     elseif #(AuxFilter.auxStr) > 0 and fullAuxCodes and  AuxFilter.match(fullAuxCodes, AuxFilter.auxStr) then
         -- 匹配到辅助码的待选项，直接插入到候选框中( 获得靠前的位置 )
+        cand = candisub:new(cand)
         AuxFilter.yield_candisub(cand)
     else
         -- 待选项字词 没有 匹配到当前的辅助码，插入到列表中，最后插入到候选框里( 获得靠后的位置 )
@@ -742,6 +751,16 @@ function AuxFilter.main1(input,env)
 ]]
 
     end
+    -- local fc = AuxFilter.funccode:sub(-1)
+    -- if fc == "a" then
+    --     AuxFilter.leftcompen = 1
+    -- elseif fc == "d" then
+    --     AuxFilter.rightcompen = 1
+    -- elseif fc == "s" then
+    --     AuxFilter.leftcompen = 2
+    -- elseif fc == "f" then
+    --     AuxFilter.rightcompen = 2
+    -- end
     AuxFilter.leftcompen = countSubstringOccurrences(AuxFilter.funccode,"a") + 2* countSubstringOccurrences(AuxFilter.funccode,"s") --左偏移量 
     AuxFilter.rightcompen = countSubstringOccurrences(AuxFilter.funccode,"d") + 2 * countSubstringOccurrences(AuxFilter.funccode,"f") -- 右偏移
     AuxFilter.skipc = countSubstringOccurrences(AuxFilter.funccode,"w")
@@ -950,7 +969,7 @@ function AuxFilter.func(input, env)
     AuxFilter.rightcompen = 0
     AuxFilter.skipc = 0
     AuxFilter.counter = 0
-    AuxFilter.prelen = nil -- 第一個詞的長度 用於偏離計算
+    AuxFilter.prelen = nil -- 第一個上屏詞的長度 用於偏離計算 
     AuxFilter.single_flag = AuxFilter.single_flag or false --標記篩選類型是哪個
     local ctx = env.engine.context
     AuxFilter.Update_codes(ctx)
