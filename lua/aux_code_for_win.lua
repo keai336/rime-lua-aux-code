@@ -607,32 +607,39 @@ function candisub:new(cand,s_len)
     end
     return self
 end
--- 返回指定长度的候选
 function AuxFilter.yield_candisub(cand)
     local finalcandi = cand
-    if (AuxFilter.yieldrawset[finalcandi.rawcand.text]~=nil)then
+    -- 检查候选是否已经处理过
+    if AuxFilter.yieldrawset[finalcandi.rawcand.text] ~= nil then
         return    
     end
+    
+    -- 初始化必要的变量
     AuxFilter.last_fist_commit = AuxFilter.last_fist_commit or {}
-    -- logdic("aaa")
     AuxFilter.counter = AuxFilter.counter or 0
     AuxFilter.auxStr = AuxFilter.auxStr or ""
+    
+    -- 处理第一个候选的特殊情况
     if AuxFilter.counter == 0 then
         if #AuxFilter.auxStr == 1 then
             if AuxFilter.last_fist_commit[1] == finalcandi.rawcand.text then
                 return
             end
         elseif #AuxFilter.auxStr == 2 then
-            if AuxFilter.last_fist_commit[1] == finalcandi.rawcand.text or AuxFilter.last_fist_commit[2] == finalcandi.rawcand.text then
+            if AuxFilter.last_fist_commit[1] == finalcandi.rawcand.text or 
+               AuxFilter.last_fist_commit[2] == finalcandi.rawcand.text then
                 return
             end
         end
     end
-    if AuxFilter.turned~=true then
+    
+    -- 记录已处理的候选
+    if AuxFilter.turned ~= true then
         AuxFilter.yieldrawset[finalcandi.rawcand.text] = true
-    end
-    if AuxFilter.skipc<=0 then
-        AuxFilter.counter = AuxFilter.counter+1
+    end    
+    
+    if AuxFilter.skipc <= 0 then
+        AuxFilter.counter = AuxFilter.counter + 1
         if AuxFilter.counter == 1 then
             AuxFilter.firstcand_len = utf8len(finalcandi.cand.text)
             if #AuxFilter.auxStr == 0 then
@@ -640,22 +647,20 @@ function AuxFilter.yield_candisub(cand)
             elseif #AuxFilter.auxStr == 1 then
                 AuxFilter.last_fist_commit[2] = finalcandi.rawcand.text
             end
-        else
         end
+        
         local cand = finalcandi.cand
         if AuxFilter.yieldset[cand.text] then
             return
-        else
-            AuxFilter.yieldset[cand.text] = true
-            yield(finalcandi.cand)
         end
+        if AuxFilter.turned ~= true then
+            AuxFilter.yieldset[cand.text] = true
+        end
+        yield(finalcandi.cand)
     else
-        AuxFilter.skipc=AuxFilter.skipc-1
+        AuxFilter.skipc = AuxFilter.skipc - 1
     end
-
 end
-
-
 -- 辅码与音码匹配与否
 local function boolaux(tab)
     local mark = false
