@@ -536,6 +536,7 @@ candisub.__index = candisub
 -- 构造函数
 function candisub:new(cand,s_len)
     local self = setmetatable({}, candisub)
+    self.rawcand = cand
     self.cand = cand
     self.type = cand.type
     self.ftext = cand.text
@@ -609,7 +610,7 @@ end
 -- 返回指定长度的候选
 function AuxFilter.yield_candisub(cand)
     local finalcandi = cand
-    if (AuxFilter.yieldset[finalcandi.cand.text]~=nil)then
+    if (AuxFilter.yieldrawset[finalcandi.rawcand.text]~=nil)then
         return    
     end
     AuxFilter.last_fist_commit = AuxFilter.last_fist_commit or {}
@@ -618,31 +619,36 @@ function AuxFilter.yield_candisub(cand)
     AuxFilter.auxStr = AuxFilter.auxStr or ""
     if AuxFilter.counter == 0 then
         if #AuxFilter.auxStr == 1 then
-            if AuxFilter.last_fist_commit[1] == finalcandi.cand.text then
+            if AuxFilter.last_fist_commit[1] == finalcandi.rawcand.text then
                 return
             end
         elseif #AuxFilter.auxStr == 2 then
-            if AuxFilter.last_fist_commit[1] == finalcandi.cand.text or AuxFilter.last_fist_commit[2] == finalcandi.cand.text then
+            if AuxFilter.last_fist_commit[1] == finalcandi.rawcand.text or AuxFilter.last_fist_commit[2] == finalcandi.rawcand.text then
                 return
             end
         end
     end
     if AuxFilter.turned~=true then
-        AuxFilter.yieldset[finalcandi.cand.text] = true
+        AuxFilter.yieldrawset[finalcandi.rawcand.text] = true
     end
     if AuxFilter.skipc<=0 then
         AuxFilter.counter = AuxFilter.counter+1
         if AuxFilter.counter == 1 then
             AuxFilter.firstcand_len = utf8len(finalcandi.cand.text)
             if #AuxFilter.auxStr == 0 then
-                AuxFilter.last_fist_commit[1] = finalcandi.cand.text
+                AuxFilter.last_fist_commit[1] = finalcandi.rawcand.text
             elseif #AuxFilter.auxStr == 1 then
-                AuxFilter.last_fist_commit[2] = finalcandi.cand.text
+                AuxFilter.last_fist_commit[2] = finalcandi.rawcand.text
             end
         else
         end
         local cand = finalcandi.cand
-        yield(finalcandi.cand)
+        if AuxFilter.yieldset[cand.text] then
+            return
+        else
+            AuxFilter.yieldset[cand.text] = true
+            yield(finalcandi.cand)
+        end
     else
         AuxFilter.skipc=AuxFilter.skipc-1
     end
@@ -965,6 +971,7 @@ function AuxFilter.func(input, env)
     -- logdic("出發")
     env.notifiermark = -1
     AuxFilter.yieldset = {}
+    AuxFilter.yieldrawset = {}
     AuxFilter.leftcompen = 0
     AuxFilter.rightcompen = 0
     AuxFilter.skipc = 0
