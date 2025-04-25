@@ -117,7 +117,7 @@ local function utf8sub(str, i, j)
 end
 function AuxFilter.init(env)
     local engine = env.engine
-    AuxFilter.memory = Memory(env.engine, env.engine.schema)
+    -- AuxFilter.memory = Memory(env.engine, env.engine.schema)
     -- local defaultuserprefer = {path="ZRM_Aux-code",showor="on",trigger=";", switch = "`",matchmode="s"}
     local defaultuserprefer = {
         path = "ZRM_Aux-code",
@@ -444,48 +444,40 @@ end
 
 
 -----------------------------------------------
--- 判斷 auxStr 是否匹配 fullAux  --修改为了宽松匹配
+-- 判斷 auxStr 是否匹配 fullAux 
 -----------------------------------------------
 function AuxFilter.match(fullAux, auxStr)
+    -- 空辅码表直接返回 false
     if #fullAux == 0 then
         return false
     end
-    
 
-    local firstKeyMatched = fullAux[1]:find(auxStr:sub(1, 1)) ~= nil
-    local secondKeymatched = fullAux[2]:find(auxStr:sub(1, 1)) ~= nil
-    -- 如果辅助码只有一个键，且第一个键匹配两辅码中任意一个，则返回 true
+    -- 处理单字符匹配
     if #auxStr == 1 then
-        -- 为了与断句的逻辑统一,还是不加这个分支了
-        if AuxFilter.matchmode==1 then
-            return firstKeyMatched
-        elseif AuxFilter.matchmode==0 then
-            return firstKeyMatched or secondKeymatched
+        local char = auxStr:sub(1, 1)
+        local firstMatch = fullAux[1]:find(char) ~= nil
+        return AuxFilter.matchmode == 1 and firstMatch or 
+               firstMatch or fullAux[2]:find(char) ~= nil
+    end
+
+    -- 处理双字符匹配
+    local aux1, aux2 = auxStr:sub(1,1), auxStr:sub(2,2)
+    
+    for i = 1, #fullAux[1] do
+        local f1, f2 = fullAux[1]:sub(i,i), fullAux[2]:sub(i,i)
+        
+        -- 检查正序匹配
+        if f1 == aux1 and f2 == aux2 then
+            return true
+        end
+        
+        -- 宽松模式下检查逆序匹配
+        if AuxFilter.matchmode == 0 and f2 == aux1 and f1 == aux2 then
+            return true
         end
     end
-    -- 宽松模式下如果辅助码有两个有效组合的排列都有效  严格模式下 顺序一致有效
-    local auxStr1 = auxStr:sub(1,1)
-    local auxStr2 = auxStr:sub(2,2)
-    local mark = false
-    for i=1,#fullAux[1] do
-        local f1 = fullAux[1]:sub(i,i)
-        local f2 = fullAux[2]:sub(i,i)
-        local vm1 = f1 == auxStr1
-        local vm2 = f2 == auxStr2
-        local fm1 = f2 == auxStr1
-        local fm2 = f1 == auxStr2
-        if vm1 and vm2 then
-            mark = true
-            break
-        end
-        if AuxFilter.matchmode == 0 then
-            if fm1 and fm2 then
-                mark = true
-                break
-            end
-        end
-    end
-    return mark
+    
+    return false
 end
 local function split_pinyin(pinyin_str)
     if not pinyin_str then return {} end
@@ -515,20 +507,18 @@ local function sum_lengths(slice, n)
     return total
 end
 
-local function transform_preedit(tbl,n)
+local function transform_preedit(tbl, n)
+    if not tbl or n <= 0 then return {} end
+    
     local result = {}
-    for i = 1,n do
+    for i = 1, n do
         local jp = tbl[i]
         if jp then
-            local rs = jp
-            if AuxFilter.preedit_trans then
-                rs = AuxFilter.preedit_trans:apply(jp,true)
-            end
-            result[i] = rs
+            result[i] = AuxFilter.preedit_trans and AuxFilter.preedit_trans:apply(jp, true) or jp
         end
     end
     return result
-end 
+end
 -- 定义一个候选类
 local candisub= {}
 candisub.__index = candisub
@@ -638,7 +628,7 @@ end
 function AuxFilter.yield_candisub(cand)
     local finalcandi = cand
     -- 检查候选是否已经处理过
-    if AuxFilter.yieldrawset[finalcandi.rawcand.text] ~= nil then
+    if AuxFilter.yieldrawset[finalcandi.rawcand.text] then
         return    
     end
     
@@ -664,8 +654,8 @@ function AuxFilter.yield_candisub(cand)
     -- 记录已处理的候选
     if AuxFilter.turned ~= true then
         AuxFilter.yieldrawset[finalcandi.rawcand.text] = true
+        -- AuxFilter.yieldset[finalcandi.cand.text] = true
     end    
-    
     if AuxFilter.skipc <= 0 then
         AuxFilter.counter = AuxFilter.counter + 1
         if AuxFilter.counter == 1 then
@@ -686,7 +676,13 @@ function AuxFilter.yield_candisub(cand)
         end
         yield(finalcandi.cand)
     else
+        -- AuxFilter.skiped = AuxFilter.skiped or {}
+        -- if AuxFilter.skiped[finalcandi.cand.text] then
+        --     return
+        -- end
         AuxFilter.skipc = AuxFilter.skipc - 1
+        -- AuxFilter.skiped[finalcandi.cand.text] = true
+        -- logdic(AuxFilter.inputCode.."|"..finalcandi.cand.text .. "|" .. finalcandi.rawcand.text .. str_table(AuxFilter.skiped))
     end
 end
 -- 辅码与音码匹配与否
@@ -822,6 +818,7 @@ function AuxFilter.main1(input,env)
         AuxFilter.turned = false
     end
     --如果辅筛没筛出来,提示你进行辅断
+    -- AuxFilter.skiped = {}
     if AuxFilter.counter==0 then
         local commentfirst =  "无匹配"
         local inputspls =  split_pinyin(rawpreedit)
