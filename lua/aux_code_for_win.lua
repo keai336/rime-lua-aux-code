@@ -533,78 +533,106 @@ end
 local candisub= {}
 candisub.__index = candisub
 
--- 构造函数
-function candisub:new(cand,s_len)
+--[[
+candisub 构造函数
+用于创建一个 candisub 对象，该对象包装了一个原始的 Rime Candidate 对象。
+主要功能是根据输入长度 (s_len) 或其他条件 (AuxFilter 补偿值)，
+可能对候选词的文本 (text) 和预编辑码 (preedit) 进行截断处理。
+同时处理 Shadow Candidate 和不同类型的候选词（如 completion, table）。
+
+参数:
+  cand (Candidate): Rime 的原始候选词对象。
+  s_len (number, optional): 指定的期望候选词长度（字符数）。
+
+返回:
+  candisub: 一个新的 candisub 实例。
+]]
+--[[
+candisub 构造函数
+包装 Rime Candidate 对象，主要处理候选词截断和 preedit 调整。
+
+参数:
+  cand (Candidate): 原始候选词。
+  s_len (number, optional): 指定的截断长度（字符数）。
+返回:
+  candisub: 新的 candisub 实例。
+]]
+function candisub:new(cand, s_len)
     local self = setmetatable({}, candisub)
+
     self.rawcand = cand
-    self.cand = cand
+    self.cand = cand -- 当前处理的候选词，可能被截断后的新 Candidate 替换
     self.type = cand.type
-    self.ftext = cand.text
-    self.line = false
-    local rawflag = true
-    local preedit_flag = true
+    self.ftext = cand.text -- 原始文本，用于比较或显示
+    self.line = false -- 标记是否为线性映射 (输入段数 == 输出字数)
+
+    local rawflag = true       -- true: 修改 self.cand.preedit; false: 修改 genuine cand 的 preedit
+    local preedit_flag = true  -- true: 需要转换 preedit (如首字母大写)
+
+    -- Shadow Candidate: 使用真实候选词文本，不直接修改 preedit
     if cand:get_dynamic_type() == "Shadow" then
         self.ftext = cand:get_genuine().text
         rawflag = false
     end
-    if cand.type =="completion" or cand.type:find("table") then
+
+    -- completion/table 类型不转换 preedit
+    if cand.type == "completion" or cand.type:find("table") then
         preedit_flag = false
     end
-    local preeditls = split_pinyin(cand.preedit)
-    local rlen = #preeditls
-    local zlen = utf8len(cand.text)
-    local slen = s_len or zlen
-    local len = slen
+
+    local preeditls = split_pinyin(cand.preedit) -- 分割 preedit, e.g., "ni hao" -> {"ni", "hao"}
+    local rlen = #preeditls                     -- preedit 段数
+    local zlen = utf8len(cand.text)             -- 文本字符数
+    local len = rlen                            -- 最终使用的 preedit 段数，默认为全部
+
+    -- 核心截断逻辑: 仅当输入码数等于输出字数时 (线性) 才考虑截断
     if rlen == zlen then
         self.line = true
-        local ficompensate =  AuxFilter.rightcompen - AuxFilter.leftcompen
-        if ficompensate>0 then
-           ficompensate = 0
-        end
-        if ficompensate~=0 or s_len ~=nil then
+        -- 计算补偿值，可能缩短长度
+        local ficompensate = math.min(0, AuxFilter.rightcompen - AuxFilter.leftcompen)
+
+        -- 需要截断的条件：补偿值非零 或 指定了 s_len
+        if ficompensate ~= 0 or s_len ~= nil then
+            -- 如果传入 s_len，重置 AuxFilter 状态
             if s_len then
                AuxFilter.last_fist_commit = {}
             end
-            if AuxFilter.prelen == nil then
-                AuxFilter.prelen = slen
-            end
-            logdic("len"..tostring(AuxFilter.prelen)..cand.text)
-            local prelen = AuxFilter.prelen + ficompensate
-            logdic(tostring(prelen).."prelen")
-            if prelen<=rlen then
-                len = prelen
-                if len<1 then
-                    len = 1
-                end
-                local textsub = utf8sub(cand.text,1,len)
-                local fend = sum_lengths(preeditls,len)
-                fend = cand._start + fend
-                self.cand = Candidate(cand.type,cand._start,fend,textsub,cand.comment)
-                local preedit = table.concat(slice(preeditls,1,len), " ")
-                if preedit_flag then
-                    preedit = table.concat(transform_preedit(preeditls,len), " ")
-                end
-                if rawflag or AuxFilter.yieldset[self.ftext] then
-                    self.cand.preedit = preedit
-                else
-                    self.cand:get_genuine().preedit = preedit
-                end
-                return self
-            end
+            -- 副作用：确定并更新 AuxFilter.prelen (基础长度)
+            AuxFilter.prelen = s_len or AuxFilter.firstcand_len or zlen
+            local target_prelen = AuxFilter.prelen + ficompensate -- 计算目标长度
 
+            -- 如果目标长度有效且小于原始长度，则进行截断
+            if target_prelen <= rlen then
+                len = math.max(1, target_prelen) -- 确定最终截断长度 (至少为1)
+
+                -- 创建新的、截断后的 Candidate 对象
+                local textsub = utf8sub(cand.text, 1, len)
+                local fend = cand._start + sum_lengths(preeditls, len) -- 计算新结束位置
+                self.cand = Candidate(cand.type, cand._start, fend, textsub, cand.comment)
+                -- 注意: self.cand 现在指向新创建的对象
+            end
         end
-    else 
     end
-    -- self.cand = Candidate(cand.type,cand._start,cand._end,cand.text,cand.comment)
-    local preedit = table.concat(slice(preeditls,1,rlen), " ")
+
+    -- === 生成并设置最终的 preedit ===
+    -- 根据最终长度 `len` 截取 preedit 段
+    local final_preedit_parts = slice(preeditls, 1, len)
+
+    -- 如果需要，转换 preedit (如首字母大写)
     if preedit_flag then
-        preedit = table.concat(transform_preedit(preeditls,rlen), " ")
+        final_preedit_parts = transform_preedit(final_preedit_parts, len)
     end
+
+    -- 合并 preedit 段
+    local final_preedit = table.concat(final_preedit_parts, " ")
+
+    -- 将最终 preedit 设置到正确的 Candidate 对象上
     if rawflag or AuxFilter.yieldset[self.ftext] then
-        self.cand.preedit = preedit
+        self.cand.preedit = final_preedit -- 设置到 self.cand (可能是新的也可能是原始的)
     else
-        self.cand:get_genuine().preedit =preedit
+        self.cand:get_genuine().preedit = final_preedit -- 设置到 Shadow 背后的真实 Candidate
     end
+
     return self
 end
 function AuxFilter.yield_candisub(cand)
@@ -641,7 +669,7 @@ function AuxFilter.yield_candisub(cand)
     if AuxFilter.skipc <= 0 then
         AuxFilter.counter = AuxFilter.counter + 1
         if AuxFilter.counter == 1 then
-            AuxFilter.firstcand_len = utf8len(finalcandi.cand.text)
+            AuxFilter.firstcand_len = utf8len(finalcandi.rawcand.text)
             if #AuxFilter.auxStr == 0 then
                 AuxFilter.last_fist_commit[1] = finalcandi.rawcand.text
             elseif #AuxFilter.auxStr == 1 then
@@ -663,36 +691,26 @@ function AuxFilter.yield_candisub(cand)
 end
 -- 辅码与音码匹配与否
 local function boolaux(tab)
-    local mark = false
-    if tab then
-        if table.size(tab)~=0 then
-        mark = true
-        end
-    
-end
-return mark
-end
-local function combmath(aux,tab)
-    local mark = true --;;这种空辅码也返回true也就是断在头部
-    if AuxFilter.matchmode ==0 then
-        --宽匹配下无关辅码顺序
-        if #aux~=0 then
-            if not (boolaux(tab[aux]) or boolaux(tab[aux:reverse()])) then --
-                mark = false
-            end
-        end
-    elseif AuxFilter.matchmode==1 then
-        if #aux~=0 then
-            if not boolaux(tab[aux]) then
-                mark = false
-            end
-        end
+    if tab and table.size(tab) > 0 then
+        return true
     end
-
-
-    -- log.info(aux,mark)
-return mark
+    return false
 end
+local function combmath(aux, tab)
+    -- 空辅码返回true(断在头部)
+    if #aux == 0 then
+        return true
+    end
+    
+    -- 严格匹配模式
+    if AuxFilter.matchmode == 1 then
+        return boolaux(tab[aux])
+    end
+    
+    -- 宽松匹配模式(无关辅码顺序)
+    return boolaux(tab[aux]) or boolaux(tab[aux:reverse()])
+end
+
 local function main_main(env,cand)
     local ftext = cand.text
     if cand:get_dynamic_type() == "Shadow" then
@@ -967,7 +985,8 @@ local function switch_single_char(ctx)
         AuxFilter.single_flag = true
     end
     AuxFilter.turned = true
-    ctx.input = ctx.input:gsub(AuxFilter.switch_key,"")
+    -- 只替换最后一个 switch_key
+    ctx.input = ctx.input:gsub(AuxFilter.switch_key .. "$", "")
     AuxFilter.Update_codes(ctx)
     -- logdic(AuxFilter.inputCode)
 end
@@ -987,9 +1006,8 @@ function AuxFilter.func(input, env)
     AuxFilter.Update_codes(ctx)
     -- 分流
     local pattern_main1 = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*$'  --辅筛分支的正则
+    local pattern_singlechar_switch = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*' .. AuxFilter.switch_key ..'$'  -- 单字输入切换分支的正则
     local pattern_long = "^%a+" ..AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .."+%a*$" --长句修改分支的正则
-    local pattern_singlechar_switch = "^%a+" .. AuxFilter.trigger_key_pattern ..AuxFilter.switch_key..'%a*$'  -- 单字输入分支
--- 
     if string.match(AuxFilter.inputCode,pattern_main1)then
         -- log.info("进入分支1",AuxFilter.inputCode)
         local composition = env.engine.context.composition
@@ -1001,14 +1019,14 @@ function AuxFilter.func(input, env)
         end
         -- log.info("进入分支1",AuxFilter.inputCode)
         AuxFilter.main1(input,env)
-    elseif string.match(AuxFilter.inputCode,pattern_long) then
-        AuxFilter.last_fist_commit = nil
-        AuxFilter.longcandimodify(input,env) 
-        -- log.info("进入分支2",AuxFilter.inputCode)    
     elseif string.match(AuxFilter.inputCode,pattern_singlechar_switch) then
         -- logdic("进入分支3",AuxFilter.inputCode)
         switch_single_char(env.engine.context)
         AuxFilter.main1(input,env)
+    elseif string.match(AuxFilter.inputCode,pattern_long) then
+        AuxFilter.last_fist_commit = nil
+        AuxFilter.longcandimodify(input,env) 
+        -- log.info("进入分支2",AuxFilter.inputCode)    
     else
         AuxFilter.last_fist_commit = nil
         AuxFilter.defaultmain(input,env)
