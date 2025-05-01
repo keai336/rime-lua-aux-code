@@ -452,20 +452,19 @@ function AuxFilter.match(fullAux, auxStr)
         return false
     end
 
-    -- 处理单字符匹配
+    -- 处理单辅码匹配
     if #auxStr == 1 then
         local char = auxStr:sub(1, 1)
         local firstMatch = fullAux[1]:find(char) ~= nil
-        return AuxFilter.matchmode == 1 and firstMatch or 
-               firstMatch or fullAux[2]:find(char) ~= nil
+        local secondMatch = fullAux[2]:find(char) ~= nil
+        return (AuxFilter.matchmode == 1 and firstMatch) or 
+               (AuxFilter.matchmode == 0 and secondMatch)
     end
 
-    -- 处理双字符匹配
+    -- 处理双辅码匹配
     local aux1, aux2 = auxStr:sub(1,1), auxStr:sub(2,2)
-    
     for i = 1, #fullAux[1] do
         local f1, f2 = fullAux[1]:sub(i,i), fullAux[2]:sub(i,i)
-        
         -- 检查正序匹配
         if f1 == aux1 and f2 == aux2 then
             return true
@@ -590,11 +589,9 @@ function candisub:new(cand, s_len)
             -- 副作用：确定并更新 AuxFilter.prelen (基础长度)
             AuxFilter.prelen = s_len or AuxFilter.firstcand_len or zlen
             local target_prelen = AuxFilter.prelen + ficompensate -- 计算目标长度
-
             -- 如果目标长度有效且小于原始长度，则进行截断
             if target_prelen <= rlen then
                 len = math.max(1, target_prelen) -- 确定最终截断长度 (至少为1)
-
                 -- 创建新的、截断后的 Candidate 对象
                 local textsub = utf8sub(cand.text, 1, len)
                 local fend = cand._start + sum_lengths(preeditls, len) -- 计算新结束位置
@@ -818,7 +815,7 @@ function AuxFilter.main1(input,env)
         AuxFilter.turned = false
     end
     --如果辅筛没筛出来,提示你进行辅断
-    -- AuxFilter.skiped = {}
+    AuxFilter.skiped = {}
     if AuxFilter.counter==0 then
         local commentfirst =  "无匹配"
         local inputspls =  split_pinyin(rawpreedit)
