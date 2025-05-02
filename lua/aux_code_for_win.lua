@@ -117,8 +117,6 @@ local function utf8sub(str, i, j)
 end
 function AuxFilter.init(env)
     local engine = env.engine
-    -- AuxFilter.memory = Memory(env.engine, env.engine.schema)
-    -- local defaultuserprefer = {path="ZRM_Aux-code",showor="on",trigger=";", switch = "`",matchmode="s"}
     local defaultuserprefer = {
         path = "ZRM_Aux-code",
         showor = "on",
@@ -146,9 +144,6 @@ function AuxFilter.init(env)
     else
         AuxFilter.matchmode = 0
     end
-        -- if AuxFilter.comb_code == nil then
-    --     AuxFilter.comb_code = AuxFilter.read_ybxkcomb_File("ybxkcomb")
-    -- end
     -- 設定預設觸發鍵為分號，並從配置中讀取自訂的觸發鍵
     AuxFilter.trigger_key = defaultuserprefer["trigger"]
     AuxFilter.trigger_key_pattern = AuxFilter.trigger_key:gsub("%W", "%%%1") -- 處理特殊字符  --正则中应该表现的形式。
@@ -293,9 +288,10 @@ local function two_char_combinations(str)
             table.insert(result, str:sub(i, i) .. str:sub(j, j))
         end    
     end
-    
     return result
 end
+
+
 
 local function split(str, sep)
     local result = {}
@@ -328,7 +324,7 @@ function AuxFilter.readAuxTxt(txtpath)
     end
     local zi_to_yin_set = {}   -- 字 -> set：{[音码] = true}
     local auxCodesSet = {}     -- 字 -> set：{[辅码] = true}
-    local mixedCodes = {}      -- 音码 -> 辅码 -> {字 set}
+    local mixedCodes = {}      -- 音码 -> {辅码=true}
     
     for line in file:lines() do
         line = line:match("[^\r\n]+")  -- 去除换行符
@@ -339,14 +335,10 @@ function AuxFilter.readAuxTxt(txtpath)
             for _, fuone in ipairs(fuls) do
                 auxCodesSet[zi] = auxCodesSet[zi] or {}
                 auxCodesSet[zi][fuone] = true
-                local fuset = two_char_combinations(fuone)
                 -- 3. mixedCodes 构建为 set
                 if yb ~= "" then
                     mixedCodes[yb] = mixedCodes[yb] or {}
-                    for _, comb in ipairs(fuset) do
-                        mixedCodes[yb][comb] = mixedCodes[yb][comb] or {}
-                        mixedCodes[yb][comb][zi] = true
-                    end
+                    mixedCodes[yb][fuone] = true
                 end
             end
             -- 2. 去重插入 zi_to_yin_set
@@ -373,19 +365,6 @@ function AuxFilter.readAuxTxt(txtpath)
             table.insert(zi_to_yin[zi], yb)
         end
     end
-    
-    -- mixedCodes: 音码 -> 辅码 -> {字列表}
-    for yb, fus in pairs(mixedCodes) do
-        for fu, zi_set in pairs(fus) do
-            local zi_list = {}
-            for zi in pairs(zi_set) do
-                table.insert(zi_list, zi)
-            end
-            mixedCodes[yb][fu] = zi_list
-        end
-    end
-    
-    -- 最终赋值
     AuxFilter.aux_code = auxCodes
     AuxFilter.comb_code = mixedCodes
     AuxFilter.zi_to_yin = zi_to_yin
@@ -524,20 +503,6 @@ candisub.__index = candisub
 
 --[[
 candisub 构造函数
-用于创建一个 candisub 对象，该对象包装了一个原始的 Rime Candidate 对象。
-主要功能是根据输入长度 (s_len) 或其他条件 (AuxFilter 补偿值)，
-可能对候选词的文本 (text) 和预编辑码 (preedit) 进行截断处理。
-同时处理 Shadow Candidate 和不同类型的候选词（如 completion, table）。
-
-参数:
-  cand (Candidate): Rime 的原始候选词对象。
-  s_len (number, optional): 指定的期望候选词长度（字符数）。
-
-返回:
-  candisub: 一个新的 candisub 实例。
-]]
---[[
-candisub 构造函数
 包装 Rime Candidate 对象，主要处理候选词截断和 preedit 调整。
 
 参数:
@@ -573,7 +538,6 @@ function candisub:new(cand, s_len)
     local rlen = #preeditls                     -- preedit 段数
     local zlen = utf8len(cand.text)             -- 文本字符数
     local len = rlen                            -- 最终使用的 preedit 段数，默认为全部
-
     -- 核心截断逻辑: 仅当输入码数等于输出字数时 (线性) 才考虑截断
     if rlen == zlen then
         self.line = true
@@ -624,70 +588,75 @@ function candisub:new(cand, s_len)
 end
 function AuxFilter.yield_candisub(cand)
     local finalcandi = cand
-    -- 检查候选是否已经处理过
+    
+    -- 快速检查是否已处理 元候选去重
     if AuxFilter.yieldrawset[finalcandi.rawcand.text] then
         return    
     end
     
-    -- 初始化必要的变量
-    AuxFilter.last_fist_commit = AuxFilter.last_fist_commit or {}
-    AuxFilter.counter = AuxFilter.counter or 0
-    AuxFilter.auxStr = AuxFilter.auxStr or ""
+    -- 初始化变量（使用局部变量提升性能）
+    local last_commit = AuxFilter.last_fist_commit or {}
+    local counter = AuxFilter.counter or 0
+    local aux_str = AuxFilter.auxStr or ""
+    local aux_len = #aux_str
     
-    -- 处理第一个候选的特殊情况
-    if AuxFilter.counter == 0 then
-        if #AuxFilter.auxStr == 1 then
-            if AuxFilter.last_fist_commit[1] == finalcandi.rawcand.text then
-                return
-            end
-        elseif #AuxFilter.auxStr == 2 then
-            if AuxFilter.last_fist_commit[1] == finalcandi.rawcand.text or 
-               AuxFilter.last_fist_commit[2] == finalcandi.rawcand.text then
-                return
-            end
-        end
-    end
-    
-    -- 记录已处理的候选
-    if AuxFilter.turned ~= true then
-        AuxFilter.yieldrawset[finalcandi.rawcand.text] = true
-        -- AuxFilter.yieldset[finalcandi.cand.text] = true
-    end    
-    if AuxFilter.skipc <= 0 then
-        AuxFilter.counter = AuxFilter.counter + 1
-        if AuxFilter.counter == 1 then
-            AuxFilter.firstcand_len = utf8len(finalcandi.rawcand.text)
-            if #AuxFilter.auxStr == 0 then
-                AuxFilter.last_fist_commit[1] = finalcandi.rawcand.text
-            elseif #AuxFilter.auxStr == 1 then
-                AuxFilter.last_fist_commit[2] = finalcandi.rawcand.text
-            end
-        end
-        
-        local cand = finalcandi.cand
-        if AuxFilter.yieldset[cand.text] then
+    -- 处理第一个候选的特殊情况（简化嵌套判断） 动态去除 
+    if counter == 0 and aux_len > 0 and aux_len <= 2 then
+        if last_commit[1] == finalcandi.rawcand.text or 
+           (aux_len == 2 and last_commit[2] == finalcandi.rawcand.text) then
             return
         end
-        if AuxFilter.turned ~= true then
-            AuxFilter.yieldset[cand.text] = true
-        end
-        yield(finalcandi.cand)
-    else
-        -- AuxFilter.skiped = AuxFilter.skiped or {}
-        -- if AuxFilter.skiped[finalcandi.cand.text] then
-        --     return
-        -- end
+    end
+    
+    -- 记录非turned轮  准上屏元候选
+    if not AuxFilter.turned then
+        AuxFilter.yieldrawset[finalcandi.rawcand.text] = true
+    end
+    -- 处理跳过逻辑 wipe主动去除
+    if AuxFilter.skipc > 0 then
         AuxFilter.skipc = AuxFilter.skipc - 1
-        -- AuxFilter.skiped[finalcandi.cand.text] = true
-        -- logdic(AuxFilter.inputCode.."|"..finalcandi.cand.text .. "|" .. finalcandi.rawcand.text .. str_table(AuxFilter.skiped))
+        return
     end
+    -- 检查并记录候选文本  上屏去重
+    local cand_text = finalcandi.cand.text
+    if AuxFilter.yieldset[cand_text] then
+        return
+    end
+
+    if not AuxFilter.turned then
+        AuxFilter.yieldset[cand_text] = true
+    end
+    -- 更新计数器和首个候选信息
+    AuxFilter.counter = counter + 1
+    if counter == 0 then
+        AuxFilter.firstcand_len = utf8len(finalcandi.rawcand.text)
+        if aux_len < 2 then
+            last_commit[aux_len + 1] = finalcandi.rawcand.text
+        end
+        AuxFilter.last_fist_commit = last_commit
+    end
+    -- 提交候选
+    yield(finalcandi.cand)
 end
--- 辅码与音码匹配与否
-local function boolaux(tab)
-    if tab and table.size(tab) > 0 then
-        return true
+-- 生成辅码组合的函数
+-- @param dict: 字典形式 {ab=true, cd=true}
+-- @param mode: 's'严格模式生成单字母和完整辅码, 'l'宽松模式生成所有可能组合
+-- @return: 数组形式的组合结果
+local function two_char_combinations(dict)
+    local result = {}
+    
+    -- 遍历字典中的每个键
+    for key in pairs(dict) do
+        -- 严格模式：只添加单字母和完整辅码
+        if AuxFilter.matchmode == 0 then
+            result[key:sub(2,2)] = true
+        end
+        -- 添加第一个字母
+        result[key:sub(1,1)] = true
+        -- 添加完整辅码
+        result[key] = true
     end
-    return false
+    return result
 end
 local function combmath(aux, tab)
     -- 空辅码返回true(断在头部)
@@ -695,13 +664,17 @@ local function combmath(aux, tab)
         return true
     end
     
-    -- 严格匹配模式
-    if AuxFilter.matchmode == 1 then
-        return boolaux(tab[aux])
+    -- 如果tab为空，直接返回false
+    if not tab or not next(tab) then
+        return false
     end
     
-    -- 宽松匹配模式(无关辅码顺序)
-    return boolaux(tab[aux]) or boolaux(tab[aux:reverse()])
+    -- 生成辅码组合集合
+    local fuset = two_char_combinations(tab)
+    
+    -- 直接检查原始和反转的辅码
+    -- 严格模式只检查原始辅码，宽松模式同时检查反转辅码
+    return fuset[aux] or (AuxFilter.matchmode == 0 and fuset[aux:reverse()])
 end
 
 local function main_main(env,cand)
@@ -755,7 +728,6 @@ local function best_match(list, key)
 
     return best
 end
-
 --- 分支一 原来的功能
 function AuxFilter.main1(input,env)
     env.notifiermark = 1  --辅筛情况下的 选词后的逻辑标记 变为 1
@@ -773,16 +745,6 @@ function AuxFilter.main1(input,env)
 ]]
 
     end
-    -- local fc = AuxFilter.funccode:sub(-1)
-    -- if fc == "a" then
-    --     AuxFilter.leftcompen = 1
-    -- elseif fc == "d" then
-    --     AuxFilter.rightcompen = 1
-    -- elseif fc == "s" then
-    --     AuxFilter.leftcompen = 2
-    -- elseif fc == "f" then
-    --     AuxFilter.rightcompen = 2
-    -- end
     AuxFilter.leftcompen = countSubstringOccurrences(AuxFilter.funccode,"a") + 2* countSubstringOccurrences(AuxFilter.funccode,"s") --左偏移量 
     AuxFilter.rightcompen = countSubstringOccurrences(AuxFilter.funccode,"d") + 2 * countSubstringOccurrences(AuxFilter.funccode,"f") -- 右偏移
     AuxFilter.skipc = countSubstringOccurrences(AuxFilter.funccode,"w")
@@ -817,10 +779,14 @@ function AuxFilter.main1(input,env)
     --如果辅筛没筛出来,提示你进行辅断
     AuxFilter.skiped = {}
     if AuxFilter.counter==0 then
-        local commentfirst =  "无匹配"
+        -- local commentfirst =  "无匹配"
         local inputspls =  split_pinyin(rawpreedit)
         firstcandi.preedit = rawpreedit
         local firstcandi = candisub:new(firstcandi)
+        local candtext_list = {}
+        for i = 1, utf8len(firstcandi.cand.text) do
+            table.insert(candtext_list, utf8sub(firstcandi.cand.text, i, i))
+        end
         if AuxFilter.longcandimodify_flag and (not AuxFilter.single_flag) then
             local matchybtab = {} --辅码可以组合的未翻译的音码的集合
             if firstcandi.line then
@@ -830,6 +796,7 @@ function AuxFilter.main1(input,env)
                     local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value] or {}
                     if combmath(AuxFilter.auxStr,auxtab) then
                         table.insert(matchybtab,tostring(index).."." .. utf8sub(firstcandi.cand.text,index,index))
+                        candtext_list[index] = "<" .. candtext_list[index]
                     end
                 end
             end
@@ -837,9 +804,10 @@ function AuxFilter.main1(input,env)
                 commentfirst = table.concat(matchybtab,"--")
             end
         else
-            commentfirst = "無匹配"
+            -- commentfirst = "無匹配"
         end
-        firstcandi.cand.comment = commentfirst
+        -- firstcandi.cand.comment = commentfirst
+        firstcandi.cand = Candidate(firstcandi.cand.type, firstcandi.cand._start, firstcandi.cand._end, table.concat(candtext_list),firstcandi.cand.comment)
         yield(firstcandi.cand)
     end
 end
