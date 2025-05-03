@@ -175,7 +175,6 @@ function AuxFilter.init(env)
     end
     -- 加載輔助碼文件
     -- 不同模式不同处理逻辑
-
     env.notifier = engine.context.select_notifier:connect(function(ctx)
 
     if env.notifiermark ==1 then
@@ -184,15 +183,7 @@ function AuxFilter.init(env)
         AuxFilter.longcandimodify_notifier(ctx)
     elseif env.notifiermark==3 then
         AuxFilter.longcandimodify_ybnotifier(ctx)
-    elseif env.notifiermark==4 then
-        AuxFilter.singlechar_notifier(ctx)
     end
-    -- local lastcommit = ctx.commit_history:back()
-    -- if lastcommit ~= "" then
-        
-    -- logdic("text:" .. lastcommit.text)
-    -- logdic("type: " .. lastcommit.type)
-    -- end
     end)
 end
 --- notifier main1模式  (辅筛)
@@ -220,13 +211,12 @@ function AuxFilter.main1_notifier(ctx)
 
         -- 當最終不含有任何字母時 (候選)，就跳出分割模式，並把輔助碼分隔符刪掉
         AuxFilter.Update_codes(ctx)
-        ctx.input = AuxFilter.removeAuxInput
         if AuxFilter.removetransdInput ~= "" then
-
             -- 給詞尾自動添加分隔符，上面的 re.match 會把分隔符刪掉
-            ctx.input = ctx.input .. AuxFilter.trigger_key
+            ctx.input = AuxFilter.removeAuxInput .. AuxFilter.trigger_key
         else
             -- 剩下的直接上屏
+            ctx.input = AuxFilter.removeAuxInput
             ctx:commit()
         end
     end
@@ -242,35 +232,22 @@ function AuxFilter.main1_notifier(ctx)
     -- 保持輔助碼分隔符和原辅码存在 --
     ----------------------------
 function AuxFilter.longcandimodify_notifier(ctx)
-    local preedit = ctx:get_preedit()
-        local removeAuxInput = ctx.input:match("(%a*)" .. AuxFilter.trigger_key_pattern.."-")
-        local auxcode = ctx.input:match(AuxFilter.trigger_key_pattern.. "(%a*)" .. AuxFilter.trigger_key_pattern)
-        -- log.info("auxcode",auxcode)
-        -- log.info("removeauxinput",removeAuxInput)
-        local reeditTextFront = preedit.text:match("([^"..AuxFilter.trigger_key_pattern .."]-)" .. AuxFilter.trigger_key_pattern)
-        ctx.input = removeAuxInput
-        if reeditTextFront and reeditTextFront:match("[a-z]") then
-            -- 給詞尾自動添加分隔符和原辅码进入到辅筛模式，上面的 re.match 會把分隔符刪掉
-            ctx.input = ctx.input .. AuxFilter.trigger_key .. auxcode
-        else
-            -- 剩下的直接上屏 
-            ctx:commit()
-            
-        end
+    AuxFilter.Update_codes(ctx)
+    -- ctx.input = AuxFilter.removeAuxInput
+    local auxcode = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern.. "(%a*)".. AuxFilter.trigger_key_pattern)
+    if AuxFilter.removetransdInput ~= "" then
+        ctx.input = AuxFilter.removeAuxInput .. AuxFilter.trigger_key .. auxcode
+    else
+        ctx.input = AuxFilter.removeAuxInput
+        ctx:commit()
+    end
     end
 
 --- notifier longcandimodify2模式(修音模式) 
 function AuxFilter.longcandimodify_ybnotifier(ctx)
     -- log.info("modifyinput",AuxFilter.ybmodifiedcode)
     ctx.input = AuxFilter.ybmodifiedcode
-    end
----  notifier singlechar_notifier(连续单字模式)
-function AuxFilter.singlechar_notifier(ctx)
-     -- log.info("modifyinput",AuxFilter.ybmodifiedcode)
-    ctx.input = AuxFilter.trigger_key
-    end
-       
-
+    end     
 
 -- 生成所有长度为1和2的组合 的函数  输入 adf 会输出 {a,d,f,ad,af,df}  
 local function two_char_combinations(str)
@@ -399,27 +376,27 @@ end
 --   第二个辅码键的不重复列表为：fullAuxCodes[2]= urhafi
 -- -----------------------------------------------
 function AuxFilter.fullAux(env, word)
-    local fullAuxCodes = {}
+    -- 预分配两个位置，因为辅码最多两位
+    local fullAuxCodes = {{}, {}}
+    
     for _, codePoint in utf8.codes(word) do
         local char = utf8.char(codePoint)
-        local charAuxCodes = AuxFilter.aux_code[char] -- 每个字的辅助码组
+        local charAuxCodes = AuxFilter.aux_code[char]
         if charAuxCodes then
             for _, code in ipairs(charAuxCodes) do
-                for i = 1, #code do
-                    fullAuxCodes[i] = fullAuxCodes[i] or {}
-                    table.insert(fullAuxCodes[i], code:sub(i, i))
+                table.insert(fullAuxCodes[1], code:sub(1, 1))
+                if #code > 1 then
+                    table.insert(fullAuxCodes[2], code:sub(2, 2))
                 end
             end
         end
     end
 
-    -- 将表格转换为字符串
-    for i, chars in pairs(fullAuxCodes) do
-        fullAuxCodes[i] = table.concat(chars, "")
-    end
+    -- 合并字符串
+    fullAuxCodes[1] = table.concat(fullAuxCodes[1])
+    fullAuxCodes[2] = table.concat(fullAuxCodes[2])
     return fullAuxCodes
 end
-
 
 
 -----------------------------------------------
@@ -473,27 +450,23 @@ function slice(tbl, start_idx, end_idx)
     end
     return sliced
 end
---计算 制定长度切片元素的长度和
+--计算 指定长度切片元素的长度和
 local function sum_lengths(slice, n)
+    if not slice or n <= 0 then return 0 end
     local total = 0
-    for i = 1, n do
-        local str = slice[i]
-        if str then
-            total = total + #str
-        end
+    for i, str in ipairs(slice) do
+        if i > n then break end
+        total = total + (str and #str or 0)
     end
     return total
 end
-
 local function transform_preedit(tbl, n)
-    if not tbl or n <= 0 then return {} end
+    if not tbl or n <= 0 or not AuxFilter.preedit_trans then return tbl or {} end
     
     local result = {}
+    local apply = AuxFilter.preedit_trans.apply
     for i = 1, n do
-        local jp = tbl[i]
-        if jp then
-            result[i] = AuxFilter.preedit_trans and AuxFilter.preedit_trans:apply(jp, true) or jp
-        end
+        result[i] = tbl[i] and apply(AuxFilter.preedit_trans, tbl[i], true) or tbl[i]
     end
     return result
 end
@@ -728,194 +701,193 @@ local function best_match(list, key)
 
     return best
 end
---- 分支一 原来的功能
-function AuxFilter.main1(input,env)
-    env.notifiermark = 1  --辅筛情况下的 选词后的逻辑标记 变为 1
-    -- 分割部分正式開始
-    AuxFilter.auxStr = ""
-    AuxFilter.funccode = ""
-    local localSplit = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "([^"..AuxFilter.trigger_key_pattern.."]+)")
-    if localSplit then
-        AuxFilter.auxStr = string.sub(localSplit, 1, 2)
-        AuxFilter.funccode = string.gsub(localSplit,AuxFilter.auxStr,"",1)
-    --[[
-    除去两位辅码剩余的判定为功能码
-    为什么这里也要引入偏移量?
-    因为有时筛出的词长度长,第一页内有包含目的词的词,通过功能码可以上修改候选长度.
-]]
-
+--- 分支一：辅助码筛选功能
+function AuxFilter.main1(input, env)
+    -- 初始化环境和变量
+    env.notifiermark = 1
+    local function process_input()
+        AuxFilter.auxStr, AuxFilter.funccode = "", ""
+        local localSplit = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "([^"..AuxFilter.trigger_key_pattern.."]+)")
+        if localSplit then
+            AuxFilter.auxStr = string.sub(localSplit, 1, 2)
+            AuxFilter.funccode = string.gsub(localSplit, AuxFilter.auxStr, "", 1)
+        end
+        
+        local count = countSubstringOccurrences
+        AuxFilter.leftcompen = count(AuxFilter.funccode, "a") + 2 * count(AuxFilter.funccode, "s")
+        AuxFilter.rightcompen = count(AuxFilter.funccode, "d") + 2 * count(AuxFilter.funccode, "f")
+        AuxFilter.skipc = count(AuxFilter.funccode, "w")
     end
-    AuxFilter.leftcompen = countSubstringOccurrences(AuxFilter.funccode,"a") + 2* countSubstringOccurrences(AuxFilter.funccode,"s") --左偏移量 
-    AuxFilter.rightcompen = countSubstringOccurrences(AuxFilter.funccode,"d") + 2 * countSubstringOccurrences(AuxFilter.funccode,"f") -- 右偏移
-    AuxFilter.skipc = countSubstringOccurrences(AuxFilter.funccode,"w")
-    -- 更新逻辑：没有匹配上就不出现再候选框里，提升性能
-    AuxFilter.counter = 0 -- 计数返回候选数量
-    local firstcandi = ""      -- 第一个候选也就是最长的那个
-    local rawpreedit = ""
-    local index=0  --为了获取第一个候选的判断变量
-    for cand in input:iter() do
-        if (AuxFilter.single_flag  and #split_pinyin(cand.preedit) == 1) or (not AuxFilter.single_flag) then
-            index = index+1
-            --第一个候选词 额外逻辑
-            if index==1 then
-                firstcandi = cand
-                rawpreedit = cand.preedit
-                main_main(env,cand)   
+
+    -- 处理候选词
+    local function process_candidates()
+        local firstcandi, rawpreedit
+        local condition = function(cand)
+            return (AuxFilter.single_flag and #split_pinyin(cand.preedit) == 1) or (not AuxFilter.single_flag)
+        end
+        
+        -- 获取并处理第一个候选词
+        for cand in input:iter() do
+            if condition(cand) then
+                firstcandi, rawpreedit = cand, cand.preedit
+                main_main(env, cand)
                 break
             end
-
         end
-
-    end
-
-    for cand in input:iter() do
-        if (AuxFilter.single_flag  and #split_pinyin(cand.preedit) == 1) or (not AuxFilter.single_flag) then
-            main_main(env,cand)
+        
+        -- 处理剩余候选词
+        for cand in input:iter() do
+            if condition(cand) then
+                main_main(env, cand)
+            end
         end
+        
+        return firstcandi, rawpreedit
     end
-    if AuxFilter.turned==true then
-        AuxFilter.turned = false
-    end
-    --如果辅筛没筛出来,提示你进行辅断
-    AuxFilter.skiped = {}
-    if AuxFilter.counter==0 then
-        -- local commentfirst =  "无匹配"
-        local inputspls =  split_pinyin(rawpreedit)
+
+    -- 处理无匹配情况
+    local function handle_no_match(firstcandi, rawpreedit)
+        if not firstcandi then return end
+        
+        local inputspls = split_pinyin(rawpreedit)
         firstcandi.preedit = rawpreedit
-        local firstcandi = candisub:new(firstcandi)
+        local cand = candisub:new(firstcandi)
         local candtext_list = {}
-        for i = 1, utf8len(firstcandi.cand.text) do
-            table.insert(candtext_list, utf8sub(firstcandi.cand.text, i, i))
+        
+        for i = 1, utf8len(cand.cand.text) do
+            candtext_list[i] = utf8sub(cand.cand.text, i, i)
         end
-        if AuxFilter.longcandimodify_flag and (not AuxFilter.single_flag) then
-            local matchybtab = {} --辅码可以组合的未翻译的音码的集合
-            if firstcandi.line then
-                for index, value in ipairs(inputspls) do
-                    local zi = utf8sub(firstcandi.ftext,index,index)
-                    local best_value = best_match(AuxFilter.zi_to_yin[zi],value)
-                    local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value] or {}
-                    if combmath(AuxFilter.auxStr,auxtab) then
-                        table.insert(matchybtab,tostring(index).."." .. utf8sub(firstcandi.cand.text,index,index))
-                        candtext_list[index] = "<" .. candtext_list[index]
-                    end
+        
+        if AuxFilter.longcandimodify_flag and (not AuxFilter.single_flag) and cand.line then
+            local matchybtab = {}
+            for index, value in ipairs(inputspls) do
+                local zi = utf8sub(cand.ftext, index, index)
+                local best_value = best_match(AuxFilter.zi_to_yin[zi], value)
+                local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value] or {}
+                
+                if combmath(AuxFilter.auxStr, auxtab) then
+                    table.insert(matchybtab, index .. "." .. candtext_list[index])
+                    candtext_list[index] = "<" .. candtext_list[index]
                 end
             end
-            if #matchybtab~=0 then
-                commentfirst = table.concat(matchybtab,"--")
+            
+            if #matchybtab == 0 then
+                candtext_list[1] = "❗" .. candtext_list[1]
             end
-        else
-            -- commentfirst = "無匹配"
         end
-        -- firstcandi.cand.comment = commentfirst
-        firstcandi.cand = Candidate(firstcandi.cand.type, firstcandi.cand._start, firstcandi.cand._end, table.concat(candtext_list),firstcandi.cand.comment)
-        yield(firstcandi.cand)
+        
+        cand.cand = Candidate(cand.cand.type, cand.cand._start, cand.cand._start, 
+                            table.concat(candtext_list), cand.cand.comment)
+        yield(cand.cand)
+    end
+
+    -- 主流程执行
+    process_input()
+    AuxFilter.counter = 0
+    local firstcandi, rawpreedit = process_candidates()
+    AuxFilter.turned = false
+    
+    if AuxFilter.counter == 0 then
+        handle_no_match(firstcandi, rawpreedit)
     end
 end
 
-
-
---- 无触发分支
-function AuxFilter.defaultmain(input,env)
-
+--- 无触发分支：直接处理候选词
+function AuxFilter.defaultmain(input, env)
     for cand in input:iter() do
-        -- logdic(cand.preedit)
-        -- logdic("in⚠️"..AuxFilter.inputCode .. "|"..cand.type .. "|"..cand.text.."|"..cand.comment.."|"..cand.preedit)
-        cand = candisub:new(cand)
-        
-        AuxFilter.yield_candisub(cand)
+        AuxFilter.yield_candisub(candisub:new(cand))
     end
-    
 end
 
-
-
---- 句子修改分支
-function AuxFilter.longcandimodify(input,env)
-    local branchmark = 1 --在句子修改分支中的分支  1-断句分支  2-修音分支 3-云词分支
-    env.notifiermark = 2  --断句情况下的 选词后的逻辑标记 变为 2
-    ---获取第一个候选也就是最长的那个,,怎么简单的获取,
-    local firstcandi =""
-    for cand in input:iter() do
-        AuxFilter.ftext = cand.text
-        if cand.type =="Shadow" or cand.type == "simplified" then
-            AuxFilter.ftext= cand:get_genuine().text
-        end
-        firstcandi = cand
-        break
-    end
-    local auxcode = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "(%a*)" .. AuxFilter.trigger_key_pattern) --辅码部分
-    -- log.info("auxcode",auxcode)
-    local funccode = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .. "+(%a*)") --功能码部分
-    -- log.info("fucncode",funccode)
-    local ybmodif = funccode:match("s(%a+)") --功能码部分捕获的修音的音码
-        
-        
-    if ybmodif then 
-        --进入修音分支处理
-        branchmark=2
-        funccode = string.gsub(funccode,"s" .. ybmodif,"") --减掉修音部分的功能码,为后续统计偏移做准备
-    end
-    -- log.info("音码",ybmodif)
-    -- log.info("funccode",funccode)
-    AuxFilter.leftcompen = countSubstringOccurrences(funccode,"a") --左偏移量
-    AuxFilter.rightcompen = countSubstringOccurrences(funccode,"d") + 2 * countSubstringOccurrences(funccode,"f") -- 右偏移量
-    -- local inputspls = split_by_indices(AuxFilter.removetransdInput, AuxFilter.stindex) --未翻译的音码集合
-    local inputspls =  split_pinyin(firstcandi.preedit)
-    AuxFilter.ficompensate = utf8len(firstcandi.text) --初始化偏移量  默认在断点尾部
-    local passnum = countSubstringOccurrences(AuxFilter.inputCode,AuxFilter.trigger_key) -2  --计算跳过匹配数  功能码中 ; 的作用
-    -- log.info(inputspls[1])
-    --确定最终断点位置
-    local matchedmark = false  --整句辅码是否有有效配对
+--- 句子修改分支：处理断句和修音
+function AuxFilter.longcandimodify(input, env)
+    -- 初始化环境
+    local branchmark = 1
+    env.notifiermark = 2
     
-    for index, value in ipairs(inputspls) do
-        local zi = utf8sub(AuxFilter.ftext,index,index)
-        local best_value = best_match(AuxFilter.zi_to_yin[zi],value)
-        local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value] or {}
-        -- logdic(str_table(auxtab))
-
-        if combmath(auxcode,auxtab) then
-            AuxFilter.ficompensate = index
-            matchedmark= true
-            if passnum==0 then
-            break
+    -- 获取第一个候选词
+    local function get_first_candidate()
+        for cand in input:iter() do
+            AuxFilter.ftext = cand.type == "Shadow" or cand.type == "simplified" 
+                             and cand:get_genuine().text or cand.text
+            return cand
+        end
+    end
+    
+    -- 解析输入码
+    local function parse_input_code()
+        local auxcode = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "(%a*)" .. AuxFilter.trigger_key_pattern)
+        local funccode = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .. "+(%a*)")
+        local ybmodif = funccode and funccode:match("s(%a+)")
+        
+        if ybmodif then
+            branchmark = 2
+            funccode = string.gsub(funccode, "s" .. ybmodif, "")
+        end
+        
+        return auxcode, funccode, ybmodif
+    end
+    
+    -- 计算偏移量和处理拼音
+    local function process_offsets(firstcandi, funccode)
+        AuxFilter.leftcompen = countSubstringOccurrences(funccode or "", "a")
+        AuxFilter.rightcompen = countSubstringOccurrences(funccode or "", "d") + 
+                               2 * countSubstringOccurrences(funccode or "", "f")
+        
+        local inputspls = split_pinyin(firstcandi.preedit)
+        AuxFilter.ficompensate = utf8len(firstcandi.text)
+        return inputspls
+    end
+    
+    -- 确定断点位置
+    local function find_break_point(inputspls, auxcode)
+        local passnum = countSubstringOccurrences(AuxFilter.inputCode, AuxFilter.trigger_key) - 2
+        local matchedmark = false
+        
+        for index, value in ipairs(inputspls) do
+            local zi = utf8sub(AuxFilter.ftext, index, index)
+            local best_value = best_match(AuxFilter.zi_to_yin[zi], value)
+            local auxtab = AuxFilter.comb_code[value] or AuxFilter.comb_code[best_value] or {}
+            
+            if combmath(auxcode, auxtab) then
+                AuxFilter.ficompensate = index
+                matchedmark = true
+                if passnum == 0 then break end
+                passnum = passnum - 1
             end
-            passnum=passnum-1
-
         end
+        
+        if matchedmark then
+            AuxFilter.ficompensate = AuxFilter.ficompensate - 1
+        end
+        
+        return matchedmark
     end
-    -- if compensate<=0 then
-    --     compensate=1
-    -- end
-    if matchedmark then
-       AuxFilter.ficompensate = AuxFilter.ficompensate -1  --减1是要断在作用词之前  
-    end
-    --在断点处修音逻辑
-    if branchmark==2 then
-        env.notifiermark = 3 --修音模式下,选词后的逻辑的标志变为3
-        local wrongyb = inputspls[AuxFilter.ficompensate+1]
-        inputspls[AuxFilter.ficompensate+1] = ybmodif
-        local inputcode2 = table.concat(inputspls,"")  --修改后的未翻译音码连接为字符串
-        -- log.info(inputcode2)
-        AuxFilter.ybmodifiedcode = AuxFilter.transdcodei .. inputcode2 .. AuxFilter.trigger_key  --修改后的音码 + 引导键
 
-        AuxFilter.removetransdInput = inputcode2:sub(1,-2)
-        yield(Candidate(firstcandi.type,firstcandi._start,firstcandi._start,"",wrongyb .."->" .. ybmodif))  --"确定"  候选项
+    -- 主流程执行
+    local firstcandi = get_first_candidate()
+    if not firstcandi then return end
+    local auxcode, funccode, ybmodif = parse_input_code()
+    local inputspls = process_offsets(firstcandi, funccode)
+    local matchedmark = find_break_point(inputspls, auxcode)
     
-    --在断点处断句逻辑
-    elseif branchmark==1 then
-        local comment = ""
-        -- logdic("断句"..firstcandi.text .. AuxFilter.ficompensate)
-        local finalcandi = candisub:new(firstcandi,AuxFilter.ficompensate)
-        -- logdic("断句"..finalcandi.cand.text)
+    -- 处理修音模式
+    if branchmark == 2 then
+        env.notifiermark = 3
+        local wrongyb = inputspls[AuxFilter.ficompensate + 1]
+        inputspls[AuxFilter.ficompensate + 1] = ybmodif
+        local inputcode2 = table.concat(inputspls, "")
+        AuxFilter.ybmodifiedcode = AuxFilter.transdcodei .. inputcode2 .. AuxFilter.trigger_key
+        AuxFilter.removetransdInput = inputcode2:sub(1, -2)
+        yield(Candidate(firstcandi.type, firstcandi._start, firstcandi._start, "", wrongyb .. "->" .. ybmodif))
+    
+    -- 处理断句模式
+    elseif branchmark == 1 then
+        local finalcandi = candisub:new(firstcandi, AuxFilter.ficompensate)
+        finalcandi.comment = matchedmark and "" or "辅码无匹配"
         AuxFilter.yield_candisub(finalcandi)
     end
-    if not matchedmark then
-        comment = "辅码无匹配"
-    end
-    finalcandi.comment = comment
-    yield(finalcandi)
 end
-
 
 
 
