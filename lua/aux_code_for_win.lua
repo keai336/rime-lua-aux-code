@@ -667,11 +667,47 @@ local function main_main(env,cand)
     -- 過濾輔助碼
     if #(AuxFilter.auxStr) == 0 then
         -- 沒有輔助碼、不需篩選，直接返回待選項
+        -- logdic(AuxFilter.inputCode .. ","..cand.text)
         cand = candisub:new(cand)
-
         AuxFilter.yield_candisub(cand)
     elseif #(AuxFilter.auxStr) > 0 and fullAuxCodes and  AuxFilter.match(fullAuxCodes, AuxFilter.auxStr) then
         -- 匹配到辅助码的待选项，直接插入到候选框中( 获得靠前的位置 )
+        -- logdic(AuxFilter.inputCode .. ","..cand.text)
+        cand = candisub:new(cand)
+        AuxFilter.yield_candisub(cand)
+    --对于二三四词的特殊处理
+    elseif #(AuxFilter.auxStr) == 2 and utf8len(ftext) >= 2 and utf8len(ftext) <= 4 then
+        -- 判断字符是否在列表元素的首字符位置
+        local function isCharInFirstPosition(char, list)
+            if not char or not list then
+                return false
+            end
+            
+            for _, item in ipairs(list) do
+                if type(item) == "string" and #item > 0 then
+                    if item:sub(1, 1) == char then
+                        return true
+                    end
+                end
+            end
+            
+            return false
+        end
+        local firstchar = utf8sub(ftext,1,1)
+        local firsaux = AuxFilter.auxStr:sub(1,1)
+        local firstchar_aux = AuxFilter.aux_code[firstchar]
+        local first_bool = isCharInFirstPosition(firsaux, firstchar_aux)
+        if not first_bool then
+            return
+        end
+        local secondchar = utf8sub(ftext,-1,-1)
+        local secondaux = AuxFilter.auxStr:sub(2,2)
+        local secondchar_aux = AuxFilter.aux_code[secondchar]
+        local second_bool = isCharInFirstPosition(secondaux, secondchar_aux)
+        if not second_bool then
+            return
+        end
+        cand.comment = "*"..cand.comment
         cand = candisub:new(cand)
         AuxFilter.yield_candisub(cand)
     else
@@ -925,6 +961,10 @@ local function switch_single_char(ctx)
     -- logdic(AuxFilter.inputCode)
 end
 function AuxFilter.func(input, env) 
+    -- local pyrdb = ReverseDb("build/rime_ice.reverse.bin")
+    -- local a = pyrdb:lookup("ni")
+    -- logdic(a)
+
     -- log.info("输入码",AuxFilter.inputCode)
     -- logdic("出發")
     env.notifiermark = -1
