@@ -212,8 +212,9 @@ function AuxFilter.main1_notifier(ctx)
         -- 當最終不含有任何字母時 (候選)，就跳出分割模式，並把輔助碼分隔符刪掉
         AuxFilter.Update_codes(ctx)
         if AuxFilter.removetransdInput ~= "" then
+            AuxFilter.aux_left = AuxFilter.aux_left or ""
             -- 給詞尾自動添加分隔符，上面的 re.match 會把分隔符刪掉
-            ctx.input = AuxFilter.removeAuxInput .. AuxFilter.trigger_key
+            ctx.input = AuxFilter.removeAuxInput .. AuxFilter.trigger_key ..AuxFilter.aux_left
         else
             -- 剩下的直接上屏
             ctx.input = AuxFilter.removeAuxInput
@@ -675,13 +676,12 @@ local function main_main(env,cand)
         cand = candisub:new(cand)
         AuxFilter.yield_candisub(cand)
     --对于二三四词的特殊处理
-    elseif #(AuxFilter.auxStr) == 2 and utf8len(ftext) >= 2 and utf8len(ftext) <= 4 then
+    elseif #(AuxFilter.auxStr) == 2 and utf8len(ftext) == 2 then
         -- 判断字符是否在列表元素的首字符位置
         local function isCharInFirstPosition(char, list)
             if not char or not list then
                 return false
             end
-            
             for _, item in ipairs(list) do
                 if type(item) == "string" and #item > 0 then
                     if item:sub(1, 1) == char then
@@ -704,15 +704,24 @@ local function main_main(env,cand)
         local secondchar_aux = AuxFilter.aux_code[secondchar]
         local second_bool = isCharInFirstPosition(secondaux, secondchar_aux)
         if not second_bool then
+            AuxFilter.aux_left = secondaux
+            -- logdic("auxleft为"..secondaux)
+            cand.comment = "*x"..cand.comment
+            cand = candisub:new(cand,1)
+            AuxFilter.auxleftcandi = AuxFilter.auxleftcandi or {}
+            table.insert(AuxFilter.auxleftcandi,cand)
             return
         end
-        cand.comment = "*"..cand.comment
+        cand.comment = "**"..cand.comment
         cand = candisub:new(cand)
         AuxFilter.yield_candisub(cand)
     else
         -- 待选项字词 没有 匹配到当前的辅助码，插入到列表中，最后插入到候选框里( 获得靠后的位置 )
         -- table.insert(insertLater, cand)
         -- 更新逻辑：没有匹配上就不出现再候选框里，提升性能
+    end
+    if #AuxFilter.auxStr ~= 2 then
+        AuxFilter.aux_left = ""
     end
 end
 local function best_match(list, key)
@@ -776,7 +785,16 @@ function AuxFilter.main1(input, env)
                 main_main(env, cand)
             end
         end
-        
+        -- 处理特殊词
+        if AuxFilter.counter > 0 then
+            AuxFilter.aux_left = "" 
+        end
+        AuxFilter.auxleftcandi = AuxFilter.auxleftcandi or {}
+        for k, v in ipairs(AuxFilter.auxleftcandi) do
+            AuxFilter.yield_candisub(v)
+        end
+        AuxFilter.auxleftcandi = nil
+
         return firstcandi, rawpreedit
     end
 
@@ -811,8 +829,7 @@ function AuxFilter.main1(input, env)
             end
         end
         
-        cand.cand = Candidate(cand.cand.type, cand.cand._start, cand.cand._start, 
-                            table.concat(candtext_list), cand.cand.comment)
+        cand.cand = Candidate(cand.cand.type, cand.cand._start, cand.cand._start, table.concat(candtext_list), cand.cand.comment)
         yield(cand.cand)
     end
 
@@ -821,7 +838,6 @@ function AuxFilter.main1(input, env)
     AuxFilter.counter = 0
     local firstcandi, rawpreedit = process_candidates()
     AuxFilter.turned = false
-    
     if AuxFilter.counter == 0 then
         handle_no_match(firstcandi, rawpreedit)
     end
