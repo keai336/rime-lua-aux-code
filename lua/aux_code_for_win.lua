@@ -413,7 +413,7 @@ function AuxFilter.match(fullAux, auxStr)
         local char = auxStr:sub(1, 1)
         local firstMatch = fullAux[1]:find(char) ~= nil
         local secondMatch = fullAux[2]:find(char) ~= nil
-        return (AuxFilter.matchmode == 1 and firstMatch) or 
+        return firstMatch or 
                (AuxFilter.matchmode == 0 and secondMatch)
     end
 
@@ -431,7 +431,6 @@ function AuxFilter.match(fullAux, auxStr)
             return true
         end
     end
-    
     return false
 end
 local function split_pinyin(pinyin_str)
