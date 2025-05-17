@@ -213,6 +213,7 @@ function AuxFilter.main1_notifier(ctx)
         AuxFilter.Update_codes(ctx)
         if AuxFilter.removetransdInput ~= "" then
             AuxFilter.aux_left = AuxFilter.aux_left or ""
+            -- logdic("有輔助碼"..AuxFilter.aux_left)
             -- 給詞尾自動添加分隔符，上面的 re.match 會把分隔符刪掉
             ctx.input = AuxFilter.removeAuxInput .. AuxFilter.trigger_key ..AuxFilter.aux_left
         else
@@ -664,7 +665,11 @@ local function main_main(env,cand)
         local codeComment = table.concat(auxCodes, ',')
         cand.comment = cand.comment .. '(' .. codeComment .. ')'
     end
-    -- 過濾輔助碼
+    --置空 外附辅助
+    if #(AuxFilter.auxStr) ~= 2 then
+        AuxFilter.aux_left = nil
+    end
+    -- 輔助碼处理
     if #(AuxFilter.auxStr) == 0 then
         -- 沒有輔助碼、不需篩選，直接返回待選項
         -- logdic(AuxFilter.inputCode .. ","..cand.text)
@@ -676,7 +681,7 @@ local function main_main(env,cand)
         cand = candisub:new(cand)
         AuxFilter.yield_candisub(cand)
     --对于二三四词的特殊处理
-    elseif #(AuxFilter.auxStr) == 2 and utf8len(ftext) == 2 then
+    elseif #(AuxFilter.auxStr) == 2 and utf8len(cand.text) == 2 then
         -- 判断字符是否在列表元素的首字符位置
         local function isCharInFirstPosition(char, list)
             if not char or not list then
@@ -692,18 +697,21 @@ local function main_main(env,cand)
             
             return false
         end
-        local firstchar = utf8sub(ftext,1,1)
+        local firstchar = utf8sub(cand.text,1,1)
         local firsaux = AuxFilter.auxStr:sub(1,1)
         local firstchar_aux = AuxFilter.aux_code[firstchar]
         local first_bool = isCharInFirstPosition(firsaux, firstchar_aux)
         if not first_bool then
             return
         end
-        local secondchar = utf8sub(ftext,-1,-1)
+        local secondchar = utf8sub(cand.text,-1,-1)
         local secondaux = AuxFilter.auxStr:sub(2,2)
         local secondchar_aux = AuxFilter.aux_code[secondchar]
         local second_bool = isCharInFirstPosition(secondaux, secondchar_aux)
         if not second_bool then
+            if AuxFilter.aux_left=="" then
+                return
+            end
             AuxFilter.aux_left = secondaux
             -- logdic("auxleft为"..secondaux)
             cand.comment = "*x"..cand.comment
@@ -719,9 +727,6 @@ local function main_main(env,cand)
         -- 待选项字词 没有 匹配到当前的辅助码，插入到列表中，最后插入到候选框里( 获得靠后的位置 )
         -- table.insert(insertLater, cand)
         -- 更新逻辑：没有匹配上就不出现再候选框里，提升性能
-    end
-    if #AuxFilter.auxStr ~= 2 then
-        AuxFilter.aux_left = ""
     end
 end
 local function best_match(list, key)
@@ -748,6 +753,7 @@ end
 --- 分支一：辅助码筛选功能
 function AuxFilter.main1(input, env)
     -- 初始化环境和变量
+    -- logdic("进入")
     env.notifiermark = 1
     local function process_input()
         AuxFilter.auxStr, AuxFilter.funccode = "", ""
@@ -778,23 +784,27 @@ function AuxFilter.main1(input, env)
                 break
             end
         end
+
         
         -- 处理剩余候选词
         for cand in input:iter() do
             if condition(cand) then
                 main_main(env, cand)
+                -- logdic("iuiu"..cand.text)
             end
         end
         -- 处理特殊词
-        if AuxFilter.counter > 0 then
-            AuxFilter.aux_left = "" 
+        if AuxFilter.counter>0 and #(AuxFilter.auxStr)==2 then
+            AuxFilter.aux_left = ""
         end
-        AuxFilter.auxleftcandi = AuxFilter.auxleftcandi or {}
-        for k, v in ipairs(AuxFilter.auxleftcandi) do
-            AuxFilter.yield_candisub(v)
+        if AuxFilter.counter==0 and #(AuxFilter.auxStr)==2 then
+            AuxFilter.auxleftcandi = AuxFilter.auxleftcandi or {}
+            for k, v in ipairs(AuxFilter.auxleftcandi) do
+                AuxFilter.yield_candisub(v)
+            end
         end
         AuxFilter.auxleftcandi = nil
-
+        -- logdic("结束")
         return firstcandi, rawpreedit
     end
 
@@ -823,12 +833,12 @@ function AuxFilter.main1(input, env)
                     candtext_list[index] = "<" .. candtext_list[index]
                 end
             end
-            
             if #matchybtab == 0 then
                 candtext_list[1] = "❗" .. candtext_list[1]
             end
+        elseif AuxFilter.longcandimodify_flag and AuxFilter.single_flag and cand.line then
+            candtext_list[1] = "❗" .. candtext_list[1]
         end
-        
         cand.cand = Candidate(cand.cand.type, cand.cand._start, cand.cand._start, table.concat(candtext_list), cand.cand.comment)
         yield(cand.cand)
     end
