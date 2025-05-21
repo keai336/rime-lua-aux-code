@@ -219,6 +219,7 @@ function AuxFilter.main1_notifier(ctx)
         else
             -- 剩下的直接上屏
             ctx.input = AuxFilter.removeAuxInput
+            AuxFilter.single_flag = false
             ctx:commit()
         end
     end
@@ -236,6 +237,7 @@ function AuxFilter.main1_notifier(ctx)
 function AuxFilter.longcandimodify_notifier(ctx)
     AuxFilter.Update_codes(ctx)
     -- ctx.input = AuxFilter.removeAuxInput
+    AuxFilter.single_flag = false
     local auxcode = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern.. "(%a*)".. AuxFilter.trigger_key_pattern)
     if AuxFilter.removetransdInput ~= "" then
         ctx.input = AuxFilter.removeAuxInput .. AuxFilter.trigger_key .. auxcode
@@ -248,6 +250,7 @@ function AuxFilter.longcandimodify_notifier(ctx)
 --- notifier longcandimodify2模式(修音模式) 
 function AuxFilter.longcandimodify_ybnotifier(ctx)
     -- log.info("modifyinput",AuxFilter.ybmodifiedcode)
+    AuxFilter.single_flag = false
     ctx.input = AuxFilter.ybmodifiedcode
     end     
 
@@ -495,7 +498,7 @@ function candisub:new(cand, s_len)
     self.line = false -- 标记是否为线性映射 (输入段数 == 输出字数)
 
     local rawflag = true       -- true: 修改 self.cand.preedit; false: 修改 genuine cand 的 preedit
-    local preedit_flag = true  -- true: 需要转换 preedit (如首字母大写)
+    local preedit_flag = true  -- true: 需要转换 preedit 
 
     -- Shadow Candidate: 使用真实候选词文本，不直接修改 preedit
     if cand:get_dynamic_type() == "Shadow" then
@@ -555,9 +558,8 @@ function candisub:new(cand, s_len)
     if rawflag or AuxFilter.yieldset[self.ftext] then
         self.cand.preedit = final_preedit -- 设置到 self.cand (可能是新的也可能是原始的)
     else
-        self.cand:get_genuine().preedit = final_preedit -- 设置到 Shadow 背后的真实 Candidate
+        -- self.cand:get_genuine().preedit = final_preedit -- 设置到 Shadow 背后的真实 Candidate
     end
-
     return self
 end
 function AuxFilter.yield_candisub(cand)
@@ -591,6 +593,7 @@ function AuxFilter.yield_candisub(cand)
         AuxFilter.skipc = AuxFilter.skipc - 1
         return
     end
+
     -- 检查并记录候选文本  上屏去重
     local cand_text = finalcandi.cand.text
     if AuxFilter.yieldset[cand_text] then
@@ -608,6 +611,9 @@ function AuxFilter.yield_candisub(cand)
             last_commit[aux_len + 1] = finalcandi.rawcand.text
         end
         AuxFilter.last_fist_commit = last_commit
+        if aux_len == 1 then
+            AuxFilter.one_aux_firstcode = utf8sub(cand_text,1,1)
+        end
     end
     -- 提交候选
     yield(finalcandi.cand)
@@ -712,12 +718,21 @@ local function main_main(env,cand)
             if AuxFilter.aux_left=="" then
                 return
             end
-            AuxFilter.aux_left = secondaux
-            -- logdic("auxleft为"..secondaux)
-            cand.comment = "*x"..cand.comment
-            cand = candisub:new(cand,1)
-            AuxFilter.auxleftcandi = AuxFilter.auxleftcandi or {}
-            table.insert(AuxFilter.auxleftcandi,cand)
+            if AuxFilter.counter~=0 then
+                return
+            end 
+            if firstchar == AuxFilter.one_aux_firstcode then
+                AuxFilter.aux_left = secondaux
+                -- logdic("auxleft为"..secondaux)
+                cand.comment = "*x"..cand.comment
+                AuxFilter.auxleftcandi = AuxFilter.auxleftcandi or {}
+                table.insert(AuxFilter.auxleftcandi,cand)
+            end
+            return
+        end
+        AuxFilter.one_aux_firstcode = AuxFilter.one_aux_firstcode or ""
+        if firstchar ~= AuxFilter.one_aux_firstcode  then
+            -- logdic("firstchar:"..firstchar.."firstcand:".. AuxFilter.one_aux_firstcode)
             return
         end
         cand.comment = "**"..cand.comment
@@ -754,6 +769,7 @@ end
 function AuxFilter.main1(input, env)
     -- 初始化环境和变量
     -- logdic("进入")
+
     env.notifiermark = 1
     local function process_input()
         AuxFilter.auxStr, AuxFilter.funccode = "", ""
@@ -794,15 +810,26 @@ function AuxFilter.main1(input, env)
             end
         end
         -- 处理特殊词
-        if AuxFilter.counter>0 and #(AuxFilter.auxStr)==2 then
-            AuxFilter.aux_left = ""
-        end
-        if AuxFilter.counter==0 and #(AuxFilter.auxStr)==2 then
-            AuxFilter.auxleftcandi = AuxFilter.auxleftcandi or {}
-            for k, v in ipairs(AuxFilter.auxleftcandi) do
-                AuxFilter.yield_candisub(v)
+
+        --  辅助字符串长度为2
+        local is_aux_str_len_two = (#(AuxFilter.auxStr) == 2)
+        --  首候选非单字
+        local is_first_candi_not_single_char = (utf8len(firstcandi.text) ~= 1)
+        -- 当通用条件1和2都满足时
+        if is_aux_str_len_two and is_first_candi_not_single_char then
+            if AuxFilter.counter > 0 then
+                -- 计数器大于0: 重置 aux_left
+                AuxFilter.aux_left = ""
+            elseif AuxFilter.counter == 0 then
+                -- 计数器等于0: 处理 auxleftcandi
+                AuxFilter.auxleftcandi = AuxFilter.auxleftcandi or {}
+                for _, v in ipairs(AuxFilter.auxleftcandi) do
+                    v = candisub:new(v,1)
+                    AuxFilter.yield_candisub(v) -- 输出子候选
+                end
             end
         end
+            -- 重置计数器
         AuxFilter.auxleftcandi = nil
         -- logdic("结束")
         return firstcandi, rawpreedit
