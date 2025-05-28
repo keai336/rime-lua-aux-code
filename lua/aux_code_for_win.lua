@@ -714,30 +714,32 @@ local function main_main(env,cand)
         local secondaux = AuxFilter.auxStr:sub(2,2)
         local secondchar_aux = AuxFilter.aux_code[secondchar]
         local second_bool = isCharInFirstPosition(secondaux, secondchar_aux)
-        if not second_bool then
-            if AuxFilter.aux_left=="" then
+        if second_bool then
+            AuxFilter.one_aux_firstcode = AuxFilter.one_aux_firstcode or ""
+            if firstchar ~= AuxFilter.one_aux_firstcode  then
+                -- logdic("firstchar:"..firstchar.."firstcand:".. AuxFilter.one_aux_firstcode)
                 return
             end
-            if AuxFilter.counter~=0 then
-                return
-            end 
-            if firstchar == AuxFilter.one_aux_firstcode then
-                AuxFilter.aux_left = secondaux
-                -- logdic("auxleft为"..secondaux)
-                cand.comment = "*x"..cand.comment
-                AuxFilter.auxleftcandi = AuxFilter.auxleftcandi or {}
-                table.insert(AuxFilter.auxleftcandi,cand)
+            if AuxFilter.last_fist_commit[2] ~= cand.text then
+                cand.comment = "**"..cand.comment
+                cand = candisub:new(cand)
+                AuxFilter.yield_candisub(cand)
             end
+        end
+        if AuxFilter.aux_left=="" then
             return
         end
-        AuxFilter.one_aux_firstcode = AuxFilter.one_aux_firstcode or ""
-        if firstchar ~= AuxFilter.one_aux_firstcode  then
-            -- logdic("firstchar:"..firstchar.."firstcand:".. AuxFilter.one_aux_firstcode)
+        if AuxFilter.counter~=0 then
             return
+        end 
+        if firstchar == AuxFilter.one_aux_firstcode then
+            AuxFilter.aux_left = secondaux
+            -- logdic("auxleft为"..secondaux)
+            cand.comment = "*x"..cand.comment
+            AuxFilter.auxleftcandi = AuxFilter.auxleftcandi or {}
+            table.insert(AuxFilter.auxleftcandi,cand)
         end
-        cand.comment = "**"..cand.comment
-        cand = candisub:new(cand)
-        AuxFilter.yield_candisub(cand)
+        return
     else
         -- 待选项字词 没有 匹配到当前的辅助码，插入到列表中，最后插入到候选框里( 获得靠后的位置 )
         -- table.insert(insertLater, cand)
