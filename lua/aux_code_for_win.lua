@@ -616,7 +616,13 @@ function AuxFilter.yield_candisub(cand)
         end
     end
     -- 提交候选
-    yield(finalcandi.cand)
+    ---------- 
+    local cand = finalcandi.cand
+    if AuxFilter.dupc ~= 1 then
+        local candtext = string.rep(cand.text, AuxFilter.dupc)
+        cand = Candidate(cand.type, cand._start, cand._end, candtext, cand.comment)
+    end
+    yield(cand)
 end
 -- 生成辅码组合的函数
 -- @param dict: 字典形式 {ab=true, cd=true}
@@ -638,6 +644,7 @@ local function two_char_combinations(dict)
     end
     return result
 end
+-- 混合匹配
 local function combmath(aux, tab)
     -- 空辅码返回true(断在头部)
     if #aux == 0 then
@@ -778,6 +785,8 @@ function AuxFilter.main1(input, env)
         local localSplit = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "([^"..AuxFilter.trigger_key_pattern.."]+)")
         if localSplit then
             AuxFilter.auxStr = string.sub(localSplit, 1, 2)
+            AuxFilter.auxStr = AuxFilter.auxStr:gsub(",","")
+            -- logdic(AuxFilter.auxStr)
             AuxFilter.funccode = string.gsub(localSplit, AuxFilter.auxStr, "", 1)
         end
         
@@ -785,6 +794,19 @@ function AuxFilter.main1(input, env)
         AuxFilter.leftcompen = count(AuxFilter.funccode, "a") + 2 * count(AuxFilter.funccode, "s")
         AuxFilter.rightcompen = count(AuxFilter.funccode, "d") + 2 * count(AuxFilter.funccode, "f")
         AuxFilter.skipc = count(AuxFilter.funccode, "w")
+        for i = 1, #AuxFilter.funccode do
+        local char = string.sub(AuxFilter.funccode, i, i)
+        if char == 'c' then
+            AuxFilter.dupc = AuxFilter.dupc + 1
+        elseif char == 'v' then
+            AuxFilter.dupc = AuxFilter.dupc * 2
+        elseif char == 'b' then
+            AuxFilter.dupc = AuxFilter.dupc ^ 2
+        elseif char == 'n' then
+            AuxFilter.dupc = AuxFilter.dupc - 1
+        end
+        end
+        
     end
 
     -- 处理候选词
@@ -1030,10 +1052,11 @@ function AuxFilter.func(input, env)
     AuxFilter.counter = 0
     AuxFilter.prelen = nil -- 第一個上屏詞的長度 用於偏離計算 
     AuxFilter.single_flag = AuxFilter.single_flag or false --標記篩選類型是哪個
+    AuxFilter.dupc = 1 --复制次数
     local ctx = env.engine.context
     AuxFilter.Update_codes(ctx)
     -- 分流
-    local pattern_main1 = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*$'  --辅筛分支的正则
+    local pattern_main1 = "^%a+" .. AuxFilter.trigger_key_pattern ..'[%a,]*$'  --辅筛分支的正则
     local pattern_singlechar_switch = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*' .. AuxFilter.switch_key ..'$'  -- 单字输入切换分支的正则
     local pattern_long = "^%a+" ..AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .."+%a*$" --长句修改分支的正则
     if string.match(AuxFilter.inputCode,pattern_main1)then
