@@ -122,9 +122,10 @@ function AuxFilter.init(env)
         showor = "on",
         trigger = ";",
         ["switch"] = "`",  -- 注意这里
+        ph = ",",
         matchmode = "s"
     }
-    local keys = {"path", "showor","trigger","switch", "matchmode"}
+    local keys = {"path", "showor","trigger","switch", "ph","matchmode"}
     local userprefer = string.gmatch(env.name_space,"([^@]+)") or ""
     local counter0 = 0
     for item in userprefer do
@@ -147,6 +148,7 @@ function AuxFilter.init(env)
     -- 設定預設觸發鍵為分號，並從配置中讀取自訂的觸發鍵
     AuxFilter.trigger_key = defaultuserprefer["trigger"]
     AuxFilter.trigger_key_pattern = AuxFilter.trigger_key:gsub("%W", "%%%1") -- 處理特殊字符  --正则中应该表现的形式。
+    AuxFilter.ph = defaultuserprefer["ph"]
     -- 设定是否显示辅助码，默认为显示
     AuxFilter.switch_key = defaultuserprefer["switch"]:gsub("%W", "%%%1")
     AuxFilter.show_aux_notice = defaultuserprefer["showor"]
@@ -618,7 +620,7 @@ function AuxFilter.yield_candisub(cand)
     -- 提交候选
     ---------- 
     local cand = finalcandi.cand
-    if AuxFilter.dupc ~= 1 then
+    if AuxFilter.dupc ~= 1 and AuxFilter.counter==1 then
         local candtext = string.rep(cand.text, AuxFilter.dupc)
         cand = Candidate(cand.type, cand._start, cand._end, candtext, cand.comment)
     end
@@ -785,7 +787,7 @@ function AuxFilter.main1(input, env)
         local localSplit = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "([^"..AuxFilter.trigger_key_pattern.."]+)")
         if localSplit then
             AuxFilter.auxStr = string.sub(localSplit, 1, 2)
-            AuxFilter.auxStr = AuxFilter.auxStr:gsub(",","")
+            AuxFilter.auxStr = AuxFilter.auxStr:gsub(AuxFilter.ph,"")
             -- logdic(AuxFilter.auxStr)
             AuxFilter.funccode = string.gsub(localSplit, AuxFilter.auxStr, "", 1)
         end
@@ -1056,7 +1058,7 @@ function AuxFilter.func(input, env)
     local ctx = env.engine.context
     AuxFilter.Update_codes(ctx)
     -- 分流
-    local pattern_main1 = "^%a+" .. AuxFilter.trigger_key_pattern ..'[%a,]*$'  --辅筛分支的正则
+    local pattern_main1 = "^%a+" .. AuxFilter.trigger_key_pattern ..'[%a' .. AuxFilter.ph .. ']*$'  --辅筛分支的正则
     local pattern_singlechar_switch = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*' .. AuxFilter.switch_key ..'$'  -- 单字输入切换分支的正则
     local pattern_long = "^%a+" ..AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .."+%a*$" --长句修改分支的正则
     if string.match(AuxFilter.inputCode,pattern_main1)then
