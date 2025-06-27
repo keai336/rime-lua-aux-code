@@ -175,6 +175,9 @@ function AuxFilter.init(env)
         AuxFilter.readAuxTxt(defaultuserprefer["path"])
         logdic("readAuxTxt 成功")
     end
+    if AuxFilter.opencc == nil then
+        AuxFilter.opencc = Opencc("s2t.json")
+    end
     -- 加載輔助碼文件
     -- 不同模式不同处理逻辑
     env.notifier = engine.context.select_notifier:connect(function(ctx)
@@ -620,8 +623,16 @@ function AuxFilter.yield_candisub(cand)
     -- 提交候选
     ---------- 
     local cand = finalcandi.cand
-    if AuxFilter.dupc ~= 1 and AuxFilter.counter==1 then
-        local candtext = string.rep(cand.text, AuxFilter.dupc)
+    local candtext = cand.text
+    if AuxFilter.counter == 1 then
+        if AuxFilter.dupc~=1 then
+            candtext = string.rep(candtext, AuxFilter.dupc)
+        end
+        if AuxFilter.transor==true then
+            candtext = AuxFilter.opencc:convert(candtext)
+        end
+    end
+    if candtext ~= cand.text then
         cand = Candidate(cand.type, cand._start, cand._end, candtext, cand.comment)
     end
     yield(cand)
@@ -806,8 +817,11 @@ function AuxFilter.main1(input, env)
             AuxFilter.dupc = AuxFilter.dupc ^ 2
         elseif char == 'n' then
             AuxFilter.dupc = AuxFilter.dupc - 1
+        elseif char == "t" then
+            AuxFilter.transor = true
         end
         end
+
         
     end
 
@@ -1055,6 +1069,7 @@ function AuxFilter.func(input, env)
     AuxFilter.prelen = nil -- 第一個上屏詞的長度 用於偏離計算 
     AuxFilter.single_flag = AuxFilter.single_flag or false --標記篩選類型是哪個
     AuxFilter.dupc = 1 --复制次数
+    AuxFilter.transor = false
     local ctx = env.engine.context
     AuxFilter.Update_codes(ctx)
     -- 分流
