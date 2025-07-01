@@ -181,12 +181,14 @@ function AuxFilter.init(env)
     -- 加載輔助碼文件
     -- 不同模式不同处理逻辑
     env.notifier = engine.context.select_notifier:connect(function(ctx)
-
-    if env.notifiermark ==1 then
+    if AuxFilter.notifiermark == 1 then
+        -- logdic("jr1")
         AuxFilter.main1_notifier(ctx)
-    elseif env.notifiermark==2 then
+    elseif AuxFilter.notifiermark==2 then
+        -- logdic("jr2")
         AuxFilter.longcandimodify_notifier(ctx)
-    elseif env.notifiermark==3 then
+    elseif AuxFilter.notifiermark==3 then
+        -- logdic("jr3")
         AuxFilter.longcandimodify_ybnotifier(ctx)
     end
     end)
@@ -215,6 +217,13 @@ function AuxFilter.main1_notifier(ctx)
         -- log.info('select_notifier', ctx.input, removeAuxInput, preedit.text, reeditTextFront)
 
         -- 當最終不含有任何字母時 (候選)，就跳出分割模式，並把輔助碼分隔符刪掉
+        if AuxFilter.transedtext ~=nil then
+            logdic(AuxFilter.transedtext)
+            AuxFilter.env.engine:commit_text(AuxFilter.transedtext)
+            AuxFilter.transedtext = nil
+            ctx:clear()
+            return 
+        end
         AuxFilter.Update_codes(ctx)
         if AuxFilter.removetransdInput ~= "" then
             AuxFilter.aux_left = AuxFilter.aux_left or ""
@@ -226,6 +235,8 @@ function AuxFilter.main1_notifier(ctx)
             ctx.input = AuxFilter.removeAuxInput
             AuxFilter.single_flag = false
             ctx:commit()
+            -- local cand = Candidate("pre",0,0,"测试","test")
+            -- yield(cand)
         end
     end
 
@@ -278,6 +289,11 @@ local function two_char_combinations(str)
     return result
 end
 
+function AuxFilter.trans_notifier(ctx)
+    logdic("111")
+    AuxFilter.env.engine:commit_text("1111")
+    ctx:clear()
+end
 
 
 local function split(str, sep)
@@ -624,16 +640,17 @@ function AuxFilter.yield_candisub(cand)
     ---------- 
     local cand = finalcandi.cand
     local candtext = cand.text
-    if AuxFilter.counter == 1 then
+    if AuxFilter.counter == 1 and (AuxFilter.dupc~=1 or AuxFilter.transor) then
+        candtext = AuxFilter.transdcode:gsub("‸","") .. cand.text
         if AuxFilter.dupc~=1 then
             candtext = string.rep(candtext, AuxFilter.dupc)
         end
         if AuxFilter.transor==true then
             candtext = AuxFilter.opencc:convert(candtext)
         end
-    end
-    if candtext ~= cand.text then
-        cand = Candidate(cand.type, cand._start, cand._end, candtext, cand.comment)
+        cand = Candidate(cand.type, 0, cand._end, candtext, cand.comment)
+        AuxFilter.transedtext = candtext
+
     end
     yield(cand)
 end
@@ -791,8 +808,6 @@ end
 function AuxFilter.main1(input, env)
     -- 初始化环境和变量
     -- logdic("进入")
-
-    env.notifiermark = 1
     local function process_input()
         AuxFilter.auxStr, AuxFilter.funccode = "", ""
         local localSplit = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "([^"..AuxFilter.trigger_key_pattern.."]+)")
@@ -802,7 +817,6 @@ function AuxFilter.main1(input, env)
             -- logdic(AuxFilter.auxStr)
             AuxFilter.funccode = string.gsub(localSplit, AuxFilter.auxStr, "", 1)
         end
-        
         local count = countSubstringOccurrences
         AuxFilter.leftcompen = count(AuxFilter.funccode, "a") + 2 * count(AuxFilter.funccode, "s")
         AuxFilter.rightcompen = count(AuxFilter.funccode, "d") + 2 * count(AuxFilter.funccode, "f")
@@ -931,7 +945,7 @@ end
 function AuxFilter.longcandimodify(input, env)
     -- 初始化环境
     local branchmark = 1
-    env.notifiermark = 2
+    AuxFilter.notifiermark = 2
     
     -- 获取第一个候选词
     local function get_first_candidate()
@@ -1001,7 +1015,7 @@ function AuxFilter.longcandimodify(input, env)
     
     -- 处理修音模式
     if branchmark == 2 then
-        env.notifiermark = 3
+        AuxFilter.notifiermark = 3
         local wrongyb = inputspls[AuxFilter.ficompensate + 1]
         inputspls[AuxFilter.ficompensate + 1] = ybmodif
         local inputcode2 = table.concat(inputspls, "")
@@ -1053,13 +1067,14 @@ local function switch_single_char(ctx)
     -- logdic(AuxFilter.inputCode)
 end
 function AuxFilter.func(input, env) 
+    AuxFilter.env = env
     -- local pyrdb = ReverseDb("build/rime_ice.reverse.bin")
     -- local a = pyrdb:lookup("ni")
     -- logdic(a)
 
     -- log.info("输入码",AuxFilter.inputCode)
     -- logdic("出發")
-    env.notifiermark = -1
+    AuxFilter.notifiermark = -1
     AuxFilter.yieldset = {}
     AuxFilter.yieldrawset = {}
     AuxFilter.leftcompen = 0
@@ -1072,6 +1087,9 @@ function AuxFilter.func(input, env)
     AuxFilter.transor = false
     local ctx = env.engine.context
     AuxFilter.Update_codes(ctx)
+    if AuxFilter.removetransdInput ~= "" then
+            AuxFilter.transedtext = nil -- 缓存再处理后的文字，迫不得已，不染
+    end
     -- 分流
     local pattern_main1 = "^%a+" .. AuxFilter.trigger_key_pattern ..'[%a' .. AuxFilter.ph .. ']*$'  --辅筛分支的正则
     local pattern_singlechar_switch = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*' .. AuxFilter.switch_key ..'$'  -- 单字输入切换分支的正则
@@ -1085,11 +1103,13 @@ function AuxFilter.func(input, env)
                 segment.prompt = "单字筛选分支"
             end
         end
+        AuxFilter.notifiermark = 1
         -- log.info("进入分支1",AuxFilter.inputCode)
         AuxFilter.main1(input,env)
     elseif string.match(AuxFilter.inputCode,pattern_singlechar_switch) then
         -- logdic("进入分支3",AuxFilter.inputCode)
         switch_single_char(env.engine.context)
+        AuxFilter.notifiermark = 1
         AuxFilter.main1(input,env)
     elseif string.match(AuxFilter.inputCode,pattern_long) then
         AuxFilter.last_fist_commit = nil
