@@ -1,3 +1,5 @@
+local http = require("simplehttp")
+http.TIMEOUT = 3
 local AuxFilter = {}
 -- 定义记忆词典路径   用辅码选词用户词典没有记忆,只能在这里统计,然后后续处理.不知道怎么直接操作用户词典
 local logFilePath = rime_api.get_user_data_dir() .. "/dic.log"
@@ -17,6 +19,37 @@ else
     log.info("无法打开日志文件")
 end
 end  
+
+--- http 引入
+local baseurl = "http://127.0.0.1:8080"
+local function fetch_api_config()
+    local config_url = baseurl .. "/config"
+    local res = http.request(config_url)
+    if res == "" then
+        return nil
+    end
+    -- 解析纯文本配置
+    local config_table = {}
+    -- string.gmatch 会遍历响应文本中的每一行
+    for line in res:gmatch("[^\r\n]+") do
+        -- string.match 从每一行中提取出第一个非空字符串(key)和之后的所有内容(value)
+        local key, value = line:match("^(%S+)%s+(.*)$")
+        if key and value then
+            logdic(key..value)
+            config_table[key] = value
+            -- print("已加载配置: " .. key .. " -> " .. value) -- 用于调试
+        end
+    end
+    return config_table
+end
+
+local luyz = fetch_api_config()
+local function onereq(key,inp)
+    local lu = luyz[key] or ""
+    local url = baseurl..lu..inp
+    local res = http.request(url)
+    return res
+end
 -- 获取表的字符串形式
 local function str_table(tbl)
     local lines = {}
@@ -646,7 +679,19 @@ function AuxFilter.yield_candisub(cand)
             candtext = string.rep(candtext, AuxFilter.dupc)
         end
         if AuxFilter.transor==true then
-            candtext = AuxFilter.opencc:convert(candtext)
+            if AuxFilter.trans_target == nil then
+                candtext = AuxFilter.opencc:convert(candtext)
+            else
+                -- logdic(AuxFilter.trans_target)
+                -- logdic(AuxFilter.trans_target)
+                local res = onereq(AuxFilter.trans_target,candtext)
+                -- logdic("res"..res)
+                if res == "" then
+                    cand.comment = AuxFilter.trans_target .. "空引导"
+                else
+                    candtext = res
+                end
+            end
         end
         cand = Candidate(cand.type, 0, cand._end, candtext, cand.comment)
         AuxFilter.transedtext = candtext
@@ -804,6 +849,87 @@ local function best_match(list, key)
 
     return best
 end
+--- 功能码解析
+function parseIntelligentCode(funccode)
+    -- 1. 初始化结果
+    logdic(funccode)
+    local result = {
+        leftcompen = 0,
+        rightcompen = 0,
+        skipc = 0,
+        dupc = 1,
+        transor = false,
+        trans_target = nil -- 't' 功能的目标字符
+    }
+
+    if not funccode or funccode == "" then
+        return result
+    end
+
+    local i = 1
+    local n = #funccode
+
+    -- 2. 解析偏移段 (w, a, s, d, f)
+    while i <= n do
+        local char = string.sub(funccode, i, i)
+        if char == 'w' then
+            result.skipc = result.skipc + 1
+        elseif char == 'a' then
+            result.leftcompen = result.leftcompen + 1
+        elseif char == 's' then
+            result.leftcompen = result.leftcompen + 2
+        elseif char == 'd' then
+            result.rightcompen = result.rightcompen + 1
+        elseif char == 'f' then
+            result.rightcompen = result.rightcompen + 2
+        else
+            break
+        end
+        i = i + 1
+    end
+
+    -- 3. 解析功能段
+    while i <= n do
+        local guide_char = string.sub(funccode, i, i)
+
+        -- 功能引导键: 'c'
+        if guide_char == 'c' then
+            i = i + 1
+            -- result.dupc = result.dupc + 1
+            while i <= n do
+                local op_char = string.sub(funccode, i, i)
+                if op_char == 'c' then
+                    result.dupc = result.dupc + 1
+                elseif op_char == 'v' then
+                    result.dupc = result.dupc * 2
+                elseif op_char == 'b' then
+                    result.dupc = result.dupc ^ 2
+                elseif op_char == 'n' then
+                    result.dupc = result.dupc - 1
+                else
+                    break
+                end
+                i = i + 1
+            end
+        -- 功能引导键: 't'
+        elseif guide_char == 't' then
+            i = i + 1
+            result.transor = true
+            if i <= n then
+                local start_pos = i
+                result.trans_target = string.sub(funccode,start_pos,#funccode)
+            end
+        -- 其他字符跳过
+        else
+            i = i + 1
+        end
+    end
+
+    return result
+end
+
+
+
 --- 分支一：辅助码筛选功能
 function AuxFilter.main1(input, env)
     -- 初始化环境和变量
@@ -813,29 +939,35 @@ function AuxFilter.main1(input, env)
         local localSplit = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "([^"..AuxFilter.trigger_key_pattern.."]+)")
         if localSplit then
             AuxFilter.auxStr = string.sub(localSplit, 1, 2)
+            AuxFilter.funccode = string.gsub(localSplit, AuxFilter.auxStr, "", 1)       
             AuxFilter.auxStr = AuxFilter.auxStr:gsub(AuxFilter.ph,"")
             -- logdic(AuxFilter.auxStr)
-            AuxFilter.funccode = string.gsub(localSplit, AuxFilter.auxStr, "", 1)
         end
-        local count = countSubstringOccurrences
-        AuxFilter.leftcompen = count(AuxFilter.funccode, "a") + 2 * count(AuxFilter.funccode, "s")
-        AuxFilter.rightcompen = count(AuxFilter.funccode, "d") + 2 * count(AuxFilter.funccode, "f")
-        AuxFilter.skipc = count(AuxFilter.funccode, "w")
-        for i = 1, #AuxFilter.funccode do
-        local char = string.sub(AuxFilter.funccode, i, i)
-        if char == 'c' then
-            AuxFilter.dupc = AuxFilter.dupc + 1
-        elseif char == 'v' then
-            AuxFilter.dupc = AuxFilter.dupc * 2
-        elseif char == 'b' then
-            AuxFilter.dupc = AuxFilter.dupc ^ 2
-        elseif char == 'n' then
-            AuxFilter.dupc = AuxFilter.dupc - 1
-        elseif char == "t" then
-            AuxFilter.transor = true
-        end
-        end
-
+        -- local count = countSubstringOccurrences
+        -- AuxFilter.leftcompen = count(AuxFilter.funccode, "a") + 2 * count(AuxFilter.funccode, "s")
+        -- AuxFilter.rightcompen = count(AuxFilter.funccode, "d") + 2 * count(AuxFilter.funccode, "f")
+        -- AuxFilter.skipc = count(AuxFilter.funccode, "w")
+        -- for i = 1, #AuxFilter.funccode do
+        -- local char = string.sub(AuxFilter.funccode, i, i)
+        -- if char == 'c' then
+        --     AuxFilter.dupc = AuxFilter.dupc + 1
+        -- elseif char == 'v' then
+        --     AuxFilter.dupc = AuxFilter.dupc * 2
+        -- elseif char == 'b' then
+        --     AuxFilter.dupc = AuxFilter.dupc ^ 2
+        -- elseif char == 'n' then
+        --     AuxFilter.dupc = AuxFilter.dupc - 1
+        -- elseif char == "t" then
+        --     AuxFilter.transor = true
+        -- end
+        -- end
+        local result = parseIntelligentCode(AuxFilter.funccode)
+        AuxFilter.leftcompen = result.leftcompen
+        AuxFilter.rightcompen = result.rightcompen
+        AuxFilter.skipc = result.skipc
+        AuxFilter.dupc = result.dupc
+        AuxFilter.transor = result.transor
+        AuxFilter.trans_target = result.trans_target
         
     end
 
