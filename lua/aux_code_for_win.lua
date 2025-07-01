@@ -35,7 +35,7 @@ local function fetch_api_config()
         -- string.match 从每一行中提取出第一个非空字符串(key)和之后的所有内容(value)
         local key, value = line:match("^(%S+)%s+(.*)$")
         if key and value then
-            logdic(key..value)
+            -- logdic(key..value)
             config_table[key] = value
             -- print("已加载配置: " .. key .. " -> " .. value) -- 用于调试
         end
@@ -182,6 +182,7 @@ function AuxFilter.init(env)
     AuxFilter.trigger_key = defaultuserprefer["trigger"]
     AuxFilter.trigger_key_pattern = AuxFilter.trigger_key:gsub("%W", "%%%1") -- 處理特殊字符  --正则中应该表现的形式。
     AuxFilter.ph = defaultuserprefer["ph"]
+    AuxFilter.ph_pattern = AuxFilter.ph:gsub("%W", "%%%1")
     -- 设定是否显示辅助码，默认为显示
     AuxFilter.switch_key = defaultuserprefer["switch"]:gsub("%W", "%%%1")
     AuxFilter.show_aux_notice = defaultuserprefer["showor"]
@@ -251,7 +252,7 @@ function AuxFilter.main1_notifier(ctx)
 
         -- 當最終不含有任何字母時 (候選)，就跳出分割模式，並把輔助碼分隔符刪掉
         if AuxFilter.transedtext ~=nil then
-            logdic(AuxFilter.transedtext)
+            -- logdic("cccc" .. AuxFilter.transedtext)
             AuxFilter.env.engine:commit_text(AuxFilter.transedtext)
             AuxFilter.transedtext = nil
             ctx:clear()
@@ -320,12 +321,6 @@ local function two_char_combinations(str)
         end    
     end
     return result
-end
-
-function AuxFilter.trans_notifier(ctx)
-    logdic("111")
-    AuxFilter.env.engine:commit_text("1111")
-    ctx:clear()
 end
 
 
@@ -675,8 +670,10 @@ function AuxFilter.yield_candisub(cand)
     local candtext = cand.text
     if AuxFilter.counter == 1 and (AuxFilter.dupc~=1 or AuxFilter.transor) then
         candtext = AuxFilter.transdcode:gsub("‸","") .. cand.text
+        -- logdic(candtext)
         if AuxFilter.dupc~=1 then
             candtext = string.rep(candtext, AuxFilter.dupc)
+            cand.comment = "复制" .. tostring(AuxFilter.dupc) .. "次"
         end
         if AuxFilter.transor==true then
             if AuxFilter.trans_target == nil then
@@ -689,7 +686,7 @@ function AuxFilter.yield_candisub(cand)
                 if res == "" then
                     cand.comment = AuxFilter.trans_target .. "空引导"
                 else
-                    candtext = res
+                    candtext = res 
                 end
             end
         end
@@ -852,7 +849,7 @@ end
 --- 功能码解析
 function parseIntelligentCode(funccode)
     -- 1. 初始化结果
-    logdic(funccode)
+    -- logdic(funccode)
     local result = {
         leftcompen = 0,
         rightcompen = 0,
@@ -891,7 +888,6 @@ function parseIntelligentCode(funccode)
     -- 3. 解析功能段
     while i <= n do
         local guide_char = string.sub(funccode, i, i)
-
         -- 功能引导键: 'c'
         if guide_char == 'c' then
             i = i + 1
@@ -918,6 +914,7 @@ function parseIntelligentCode(funccode)
             if i <= n then
                 local start_pos = i
                 result.trans_target = string.sub(funccode,start_pos,#funccode)
+                i = n
             end
         -- 其他字符跳过
         else
@@ -1163,23 +1160,40 @@ function AuxFilter.longcandimodify(input, env)
     end
 end
 
+--- 特殊预处理
+local function transform_input_code(inputcode)
+    local php = AuxFilter.ph_pattern  -- 已处理过的 pattern-safe ph
+    local ph = AuxFilter.ph           -- 原始分隔符
+    local trigger = AuxFilter.trigger_key
 
+    local pattern = "^([^" .. php  .. AuxFilter.trigger_key_pattern.."]+)" .. php .. "([^" .. php ..AuxFilter.trigger_key_pattern.. "]+)$"
+    if inputcode:match(pattern) then
+        return inputcode:gsub(pattern, "%1" .. trigger .. ph .. ph .. "%2")
+    else
+        return inputcode
+    end
+end
 
 -- 使用示例
 function AuxFilter.Update_codes(ctx)
     local context = ctx
     --- 预处理输入码
     AuxFilter.inputCode = context.input --输入码
+    AuxFilter.inputCode = transform_input_code(AuxFilter.inputCode)
+    -- logdic(AuxFilter.inputCode)
+
     -- log.info("输入码",AuxFilter.inputCode)
     AuxFilter.precode = context:get_preedit().text --预处理码 
+    AuxFilter.precode = transform_input_code(AuxFilter.precode)
     -- logdic(context:get_script_text())
+    -- logdic(AuxFilter.precode)
     AuxFilter.removeAuxInput = AuxFilter.inputCode:match("^(%a+)" .. AuxFilter.trigger_key_pattern.."-")  or ""--纯输入引导键前的部分
     -- log.info("引导键前的输入",AuxFilter.removeAuxInput)
     AuxFilter.removeAuxprecode = AuxFilter.precode:match("^([^" .. AuxFilter.trigger_key_pattern .. "]*)" .. AuxFilter.trigger_key_pattern.."-") or "" --去除辅码后的pre
     -- log.info("引导键前的预处理",AuxFilter.removeAuxprecode)
     -- logdic("引导键前的预处理" .. AuxFilter.removeAuxprecode)
     AuxFilter.removetransdInput= AuxFilter.removeAuxprecode:match("^[^a-z]*(%a*)") or ""  --翻译过后引导键前的未翻译部分  
-    -- log.info("引导键前的未翻译",AuxFilter.removetransdInput) 
+    -- logdic("引导键前的未翻译"..AuxFilter.removetransdInput) 
     AuxFilter.transdcode = string.gsub(AuxFilter.removeAuxprecode,AuxFilter.removetransdInput,"")  --已翻译部分
     -- log.info("已翻译部分",AuxFilter.transdcode)
     AuxFilter.transdcodei = string.gsub(AuxFilter.removeAuxInput,AuxFilter.removetransdInput,"")  --已翻译字母部分
@@ -1227,7 +1241,7 @@ function AuxFilter.func(input, env)
     local pattern_singlechar_switch = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*' .. AuxFilter.switch_key ..'$'  -- 单字输入切换分支的正则
     local pattern_long = "^%a+" ..AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .."+%a*$" --长句修改分支的正则
     if string.match(AuxFilter.inputCode,pattern_main1)then
-        -- log.info("进入分支1",AuxFilter.inputCode)
+        -- logdic("进入分支1")
         local composition = env.engine.context.composition
         if(not composition:empty()) then
             local segment = composition:back()
