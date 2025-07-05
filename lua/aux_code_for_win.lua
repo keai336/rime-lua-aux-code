@@ -1,5 +1,5 @@
 local http = require("simplehttp")
-http.TIMEOUT = 3
+http.TIMEOUT = 30
 local AuxFilter = {}
 -- 定义记忆词典路径   用辅码选词用户词典没有记忆,只能在这里统计,然后后续处理.不知道怎么直接操作用户词典
 local logFilePath = rime_api.get_user_data_dir() .. "/dic.log"
@@ -21,7 +21,7 @@ end
 end  
 
 --- http 引入
-local baseurl = "http://127.0.0.1:8080"
+local baseurl = "http://10.18.18.106:8080"
 local function fetch_api_config()
     local config_url = baseurl .. "/config"
     local res = http.request(config_url)
@@ -180,11 +180,11 @@ function AuxFilter.init(env)
     end
     -- 設定預設觸發鍵為分號，並從配置中讀取自訂的觸發鍵
     AuxFilter.trigger_key = defaultuserprefer["trigger"]
-    AuxFilter.trigger_key_pattern = AuxFilter.trigger_key:gsub("%W", "%%%1") -- 處理特殊字符  --正则中应该表现的形式。
+    AuxFilter.trigger_key_pattern = AuxFilter.trigger_key:gsub("(%W)", "%%%1") -- 處理特殊字符  --正则中应该表现的形式。
     AuxFilter.ph = defaultuserprefer["ph"]
-    AuxFilter.ph_pattern = AuxFilter.ph:gsub("%W", "%%%1")
+    AuxFilter.ph_pattern = AuxFilter.ph:gsub("(%W)", "%%%1")
     -- 设定是否显示辅助码，默认为显示
-    AuxFilter.switch_key = defaultuserprefer["switch"]:gsub("%W", "%%%1")
+    AuxFilter.switch_key = defaultuserprefer["switch"]:gsub("(%W)", "%%%1")
     AuxFilter.show_aux_notice = defaultuserprefer["showor"]
     if AuxFilter.show_aux_notice == "off" then
         AuxFilter.show_aux_notice = false
@@ -935,9 +935,10 @@ function AuxFilter.main1(input, env)
         AuxFilter.auxStr, AuxFilter.funccode = "", ""
         local localSplit = AuxFilter.inputCode:match(AuxFilter.trigger_key_pattern .. "([^"..AuxFilter.trigger_key_pattern.."]+)")
         if localSplit then
+            -- logdic("localsp"..localSplit)
             AuxFilter.auxStr = string.sub(localSplit, 1, 2)
             AuxFilter.funccode = string.gsub(localSplit, AuxFilter.auxStr, "", 1)       
-            AuxFilter.auxStr = AuxFilter.auxStr:gsub(AuxFilter.ph,"")
+            AuxFilter.auxStr = AuxFilter.auxStr:gsub(AuxFilter.ph_pattern,"")
             -- logdic(AuxFilter.auxStr)
         end
         -- local count = countSubstringOccurrences
@@ -1164,6 +1165,7 @@ end
 local function transform_input_code(inputcode)
     local php = AuxFilter.ph_pattern  -- 已处理过的 pattern-safe ph
     local ph = AuxFilter.ph           -- 原始分隔符
+    -- local sg = AuxFilter.switch_single_char
     local trigger = AuxFilter.trigger_key
 
     local pattern = "^([^" .. php  .. AuxFilter.trigger_key_pattern.."]+)" .. php .. "([^" .. php ..AuxFilter.trigger_key_pattern.. "]+)$"
@@ -1241,7 +1243,7 @@ function AuxFilter.func(input, env)
     local pattern_singlechar_switch = "^%a+" .. AuxFilter.trigger_key_pattern ..'%a*' .. AuxFilter.switch_key ..'$'  -- 单字输入切换分支的正则
     local pattern_long = "^%a+" ..AuxFilter.trigger_key_pattern .. "%a*" .. AuxFilter.trigger_key_pattern .."+%a*$" --长句修改分支的正则
     if string.match(AuxFilter.inputCode,pattern_main1)then
-        -- logdic("进入分支1")
+        -- logdic("进入分支1"..AuxFilter.inputCode)
         local composition = env.engine.context.composition
         if(not composition:empty()) then
             local segment = composition:back()
@@ -1250,17 +1252,17 @@ function AuxFilter.func(input, env)
             end
         end
         AuxFilter.notifiermark = 1
-        -- log.info("进入分支1",AuxFilter.inputCode)
+        -- logdic("进入分支1" .. AuxFilter.inputCode)
         AuxFilter.main1(input,env)
     elseif string.match(AuxFilter.inputCode,pattern_singlechar_switch) then
-        -- logdic("进入分支3",AuxFilter.inputCode)
+        -- logdic("进入分支3"..AuxFilter.inputCode)
         switch_single_char(env.engine.context)
         AuxFilter.notifiermark = 1
         AuxFilter.main1(input,env)
     elseif string.match(AuxFilter.inputCode,pattern_long) then
         AuxFilter.last_fist_commit = nil
         AuxFilter.longcandimodify(input,env) 
-        -- log.info("进入分支2",AuxFilter.inputCode)    
+        -- logdic("进入分支2"..AuxFilter.inputCode)    
     else
         AuxFilter.last_fist_commit = nil
         AuxFilter.defaultmain(input,env)
